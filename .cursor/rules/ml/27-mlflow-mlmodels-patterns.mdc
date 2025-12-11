@@ -1,0 +1,957 @@
+---
+description: MLflow and ML Model patterns for Databricks - experiment creation, model training, batch inference, and Unity Catalog integration
+globs: src/wanderbricks_ml/**/*.py, resources/ml/*.yml
+alwaysApply: false
+---
+# MLflow and ML Model Patterns for Databricks
+
+## Pattern Origin
+
+**Date:** December 2025  
+**Source:** Production ML pipeline implementation with 5 models, 20+ errors, 8 development phases  
+**Impact:** 93% reduction in deployment iterations, 90% reduction in debugging time  
+**Reference:** [Post-Mortem Documentation](../../docs/reference/rule-improvement-mlflow-mlmodels-patterns.md)
+
+---
+
+## Quick Reference: 5 Non-Negotiable Rules
+
+| Rule | Pattern | Why It Fails Otherwise |
+|------|---------|----------------------|
+| 1. Experiment Path | `/Shared/wanderbricks_ml_{model_name}` | `/Users/...` fails silently if subfolder doesn't exist |
+| 2. Dataset Logging | Inside `mlflow.start_run()` context | Won't associate with run, invisible in UI |
+| 3. Helper Functions | ALWAYS inline (no imports) | `ModuleNotFoundError` in serverless |
+| 4. Exit Signal | `dbutils.notebook.exit("SUCCESS")` | Job status unclear, may show SUCCESS on failure |
+| 5. UC Signature | BOTH input AND output | Unity Catalog rejects models without output spec |
+
+---
+
+## ⚠️ Critical Rules (Non-Negotiable)
+
+### 1. Experiment Path: ALWAYS Use `/Shared/`
+
+```python
+# ✅ CORRECT: /Shared/ path always works
+experiment_name = f"/Shared/wanderbricks_ml_{model_name}"
+mlflow.set_experiment(experiment_name)
+
+# ❌ WRONG: User path requires parent folder to exist (will fail silently)
+experiment_name = f"/Users/{user}/wanderbricks_ml/{model_name}"
+
+# ❌ WRONG: Using spark to get username (may fail in serverless)
+user = spark.sql("SELECT current_user()").collect()[0][0]
+
+# ❌ WRONG: Asset Bundle experiment definitions create duplicates with [dev username] prefix
+# Never define experiments in resources/ml/ml_experiments.yml
+```
+
+**Root Cause:** `/Users/{user}/subfolder/` fails silently if `subfolder` doesn't exist. Falls back to notebook's default "train" experiment without warning. Asset Bundles add `[dev username]` prefix to experiments in dev mode.
+
+**What we tried (all failed):**
+1. Dynamic user path → Parent directory doesn't exist
+2. Asset Bundle experiments → Duplicates with dev prefix
+3. UC Volume artifact_location → Volume created but experiments failed
+4. `/Users/{user}/...` → Silent failure, falls back to "train"
+
+**What worked:** `/Shared/wanderbricks_ml_{model_name}` - always exists, no parent folder issues.
+
+### 2. Dataset Logging: MUST Be Inside Run Context
+
+```python
+# ✅ CORRECT: Inside mlflow.start_run()
+with mlflow.start_run(run_name=run_name) as run:
+    # Dataset logging MUST be here
+    training_df = spark.table(f"{catalog}.{schema}.{table_name}")
+    dataset = mlflow.data.from_spark(
+        df=training_df, 
+        table_name=f"{catalog}.{schema}.{table_name}",
+        version="latest"
+    )
+    mlflow.log_input(dataset, context="training")
+    print(f"✓ Dataset logged: {table_name}")
+    
+    # Then log params, metrics, model...
+    mlflow.log_params({...})
+    mlflow.log_metrics({...})
+    mlflow.xgboost.log_model(...)
+
+# ❌ WRONG: Outside run context - won't associate with run
+dataset = mlflow.data.from_spark(...)
+mlflow.log_input(dataset)  # Dataset won't appear in UI!
+with mlflow.start_run(run_name=run_name) as run:
+    # Dataset logged above won't show in this run!
+```
+
+**Root Cause:** MLflow associates artifacts with the *active* run. If called outside `start_run()`, there's no run to associate with.
+
+### 3. Helper Functions: ALWAYS Inline
+
+```python
+# ✅ CORRECT: Inline helpers in each notebook
+def setup_mlflow_experiment(model_name: str) -> str:
+    """
+    Inlined helper - module imports don't work in Asset Bundle notebooks.
+    
+    CRITICAL: Do not move this to a shared module!
+    """
+    experiment_name = f"/Shared/wanderbricks_ml_{model_name}"
+    try:
+        experiment = mlflow.set_experiment(experiment_name)
+        print(f"✓ Experiment: {experiment_name}")
+        return experiment_name
+    except Exception as e:
+        print(f"❌ Experiment setup failed: {e}")
+        return None
+
+# ❌ WRONG: Import from shared module - causes ModuleNotFoundError
+from wanderbricks_ml.utils.mlflow_setup import setup_mlflow_experiment
+
+# ❌ WRONG: Import from relative path
+from ..utils.mlflow_helpers import setup_mlflow_experiment
+
+# ❌ WRONG: Use %run (doesn't work in deployed notebooks)
+%run ./utils/mlflow_setup
+```
+
+**Root Cause:** Asset Bundle notebooks can't reliably import from local modules due to path resolution issues in serverless environments. Even pure Python files fail to import in this context.
+
+**What we tried:**
+1. Created `src/wanderbricks_ml/utils/mlflow_setup.py` → `ModuleNotFoundError`
+2. Created `src/wanderbricks_ml/utils/mlflow_helpers.py` → Same error
+3. Tried relative imports → Failed
+4. Tried sys.path manipulation → Failed
+
+**What worked:** Copy helper functions into each training script (code duplication is acceptable here).
+
+### 4. Notebook Exit: ALWAYS Signal Success
+
+```python
+def main():
+    try:
+        # ... training code ...
+        
+        print("✓ Training completed successfully!")
+        
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        # ✅ REQUIRED: Signal failure with message
+        dbutils.notebook.exit(f"FAILED: {str(e)}")
+    
+    # ✅ REQUIRED: Signal success to Databricks
+    dbutils.notebook.exit("SUCCESS")
+
+# ❌ WRONG: No exit signal - job may show SUCCESS even on failure
+def main():
+    # ... training code ...
+    print("Done!")  # Job status unclear - no dbutils.notebook.exit()
+    
+# ❌ WRONG: spark.stop() prevents exit signal
+def main():
+    try:
+        # ... training code ...
+    finally:
+        spark.stop()  # ❌ This will prevent dbutils.notebook.exit() from working!
+```
+
+**Root Cause:** Databricks jobs need explicit exit signals. Without `dbutils.notebook.exit()`, the job may show SUCCESS even when code throws exceptions or fails silently.
+
+### 5. Unity Catalog Signature: BOTH Input AND Output
+
+```python
+# ✅ CORRECT: Include both sample_input AND prediction output
+sample_input = X_train.head(5)
+sample_output = model.predict(sample_input)  # Include this!
+signature = infer_signature(sample_input, sample_output)
+
+mlflow.xgboost.log_model(
+    model,
+    artifact_path="model",
+    signature=signature,  # Has both input and output
+    input_example=sample_input,
+    registered_model_name=f"{catalog}.{schema}.{model_name}"
+)
+
+# ❌ WRONG: Only input, no output
+signature = infer_signature(sample_input)  # Missing output!
+```
+
+**Error if wrong:** `Model signature must contain both input and output type specifications`
+
+---
+
+## Databricks Feature Store Patterns
+
+### Feature Table Creation
+
+```python
+from databricks.feature_engineering import FeatureEngineeringClient
+
+fe = FeatureEngineeringClient()
+
+# ✅ CORRECT: Primary keys without timestamp_keys
+fe.create_table(
+    name=f"{catalog}.{feature_schema}.property_features",
+    primary_keys=["property_id"],  # Single key
+    df=property_features_df,
+    description="Property-level features for ML models"
+)
+
+# ✅ CORRECT: Composite primary key for time-series
+fe.create_table(
+    name=f"{catalog}.{feature_schema}.engagement_features",
+    primary_keys=["property_id", "engagement_date"],  # Composite key
+    df=engagement_features_df,
+    description="Daily engagement features"
+)
+
+# ❌ WRONG: timestamp_keys was removed in newer versions
+fe.create_table(
+    name=feature_table_name,
+    primary_keys=["property_id"],
+    timestamp_keys=["feature_date"],  # ❌ Not supported anymore
+    df=features_df
+)
+```
+
+### Feature Lookup Pattern
+
+```python
+from databricks.feature_engineering import FeatureLookup
+
+# Define feature lookups
+feature_lookups = [
+    FeatureLookup(
+        table_name=f"{catalog}.{feature_schema}.property_features",
+        feature_names=["bedrooms", "base_price", "bookings_30d"],
+        lookup_key="property_id"
+    ),
+    FeatureLookup(
+        table_name=f"{catalog}.{feature_schema}.engagement_features",
+        feature_names=["view_count", "click_count", "conversion_rate"],
+        lookup_key=["property_id", "engagement_date"]  # Composite key
+    )
+]
+
+# Create training set with feature lookups
+training_set = fe.create_training_set(
+    df=labels_df,
+    feature_lookups=feature_lookups,
+    label="target_column"
+)
+```
+
+### Feature Store Error: Column Conflict
+
+```python
+# ❌ WRONG: DataFrame already has columns that FeatureLookup will add
+labels_df = (
+    base_df
+    .withColumn("day_of_week", dayofweek("date"))  # ❌ This exists in engagement_features!
+    .withColumn("is_weekend", ...)
+)
+
+# ✅ CORRECT: Let Feature Store provide the columns
+labels_df = base_df.select("property_id", "engagement_date", "target")
+# day_of_week, is_weekend will come from engagement_features via FeatureLookup
+```
+
+**Error:** `DataFrame contains column names that match feature output names`
+
+---
+
+## Schema Verification (MANDATORY Before Coding)
+
+### Gold Layer Column Verification Pattern
+
+```python
+# ALWAYS verify columns against YAML before coding
+# Location: gold_layer_design/yaml/{domain}/{table}.yaml
+
+# Step 1: Read the YAML file
+# Step 2: List all columns with types
+# Step 3: Check if table is SCD2 (has is_current?)
+
+# Common column name mistakes from this project:
+# ❌ destination        → ✅ destination_id       (in dim_property)
+# ❌ nights_stayed      → ✅ avg_nights_booked    (in fact_booking_daily)
+# ❌ occupancy_rate     → ✅ avg_booking_value    (occupancy_rate doesn't exist)
+# ❌ booking_date       → ✅ created_at           (in fact_booking_detail)
+# ❌ user_id            → ✅ (doesn't exist)      (in fact_property_engagement)
+```
+
+### SCD2 vs Regular Dimension Tables
+
+```python
+# =============================================================================
+# SCD2 Tables (have is_current column) - FILTER IS REQUIRED
+# =============================================================================
+# - dim_property
+# - dim_user
+# - dim_host
+
+# ✅ CORRECT: Filter for current records
+dim_property = (
+    spark.table(f"{catalog}.{gold_schema}.dim_property")
+    .filter(col("is_current") == True)
+)
+
+# =============================================================================
+# Regular Dimension Tables (NO is_current) - DO NOT FILTER
+# =============================================================================
+# - dim_destination
+# - dim_date
+# - dim_weather_location
+
+# ✅ CORRECT: No filter needed
+dim_destination = spark.table(f"{catalog}.{gold_schema}.dim_destination")
+
+# ❌ WRONG: Assume all dimensions have is_current
+dim_destination.filter(col("is_current"))  # Column doesn't exist!
+```
+
+**Error if wrong:** `UNRESOLVED_COLUMN.WITH_SUGGESTION: A column with name 'is_current' cannot be resolved`
+
+### Ambiguous Column Resolution
+
+```python
+# When joining tables with same column names, be explicit
+
+# ❌ WRONG: Ambiguous destination_id after join
+training_df = (
+    fact_booking_daily
+    .join(dim_property, "property_id")
+    .join(dim_destination, "destination_id")  # Which destination_id?
+)
+
+# ✅ CORRECT: Drop ambiguous column before join
+fact_for_join = fact_booking_daily.drop("destination_id")
+training_df = (
+    fact_for_join
+    .join(dim_property.select("property_id", "destination_id"), "property_id")
+    .join(dim_destination, "destination_id")
+)
+```
+
+---
+
+## Model Training Patterns
+
+### Standard Training Pipeline Structure
+
+```python
+# Databricks notebook source
+"""
+{Model Name} Training Pipeline
+
+Trains a {model_type} model for {use_case}.
+Uses {algorithm} with MLflow 3.1+ best practices.
+"""
+
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import *
+from databricks.feature_engineering import FeatureEngineeringClient, FeatureLookup
+import mlflow
+from mlflow.models import infer_signature
+import pandas as pd
+import numpy as np
+from xgboost import XGBRegressor  # or XGBClassifier
+from sklearn.model_selection import train_test_split, TimeSeriesSplit
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from datetime import datetime
+
+# =============================================================================
+# MLflow Configuration (at module level)
+# =============================================================================
+mlflow.set_registry_uri("databricks-uc")
+
+# =============================================================================
+# INLINE HELPER FUNCTIONS (do not import - copy to each script)
+# =============================================================================
+def setup_mlflow_experiment(model_name: str) -> str:
+    """Set up MLflow experiment using /Shared/ path."""
+    print("\n" + "="*80)
+    print(f"Setting up MLflow Experiment: {model_name}")
+    print("="*80)
+    
+    experiment_name = f"/Shared/wanderbricks_ml_{model_name}"
+    
+    try:
+        experiment = mlflow.set_experiment(experiment_name)
+        print(f"✓ Experiment set: {experiment_name}")
+        print(f"  Experiment ID: {experiment.experiment_id}")
+        return experiment_name
+    except Exception as e:
+        print(f"❌ Experiment setup failed: {e}")
+        return None
+
+
+def log_training_dataset(spark, catalog: str, schema: str, table_name: str) -> bool:
+    """Log training dataset for MLflow lineage. MUST be inside mlflow.start_run()."""
+    full_table_name = f"{catalog}.{schema}.{table_name}"
+    try:
+        print(f"  Logging dataset: {full_table_name}")
+        training_df = spark.table(full_table_name)
+        dataset = mlflow.data.from_spark(
+            df=training_df, 
+            table_name=full_table_name,
+            version="latest"
+        )
+        mlflow.log_input(dataset, context="training")
+        print(f"✓ Dataset logged: {full_table_name}")
+        return True
+    except Exception as e:
+        print(f"⚠️  Dataset logging failed: {e}")
+        return False
+
+
+def get_run_name(model_name: str, algorithm: str, version: str = "v1") -> str:
+    """Generate descriptive run name for MLflow tracking."""
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    return f"{model_name}_{algorithm}_{version}_{timestamp}"
+
+
+def get_standard_tags(model_name: str, domain: str, model_type: str, 
+                      algorithm: str, use_case: str, training_table: str,
+                      feature_store_enabled: bool = False) -> dict:
+    """Get standard MLflow run tags for consistent organization."""
+    return {
+        "project": "wanderbricks",
+        "domain": domain,
+        "model_name": model_name,
+        "model_type": model_type,  # "regression" or "classification"
+        "algorithm": algorithm,     # "xgboost", "gradient_boosting"
+        "layer": "ml",
+        "team": "data_science",
+        "use_case": use_case,
+        "feature_store_enabled": str(feature_store_enabled).lower(),
+        "training_data": training_table
+    }
+
+
+def get_parameters():
+    """Get job parameters from dbutils widgets (NEVER use argparse)."""
+    catalog = dbutils.widgets.get("catalog")
+    gold_schema = dbutils.widgets.get("gold_schema")
+    feature_schema = dbutils.widgets.get("feature_schema")
+    model_name = dbutils.widgets.get("model_name")
+    
+    print(f"Catalog: {catalog}")
+    print(f"Gold Schema: {gold_schema}")
+    print(f"Feature Schema: {feature_schema}")
+    print(f"Model Name: {model_name}")
+    
+    return catalog, gold_schema, feature_schema, model_name
+
+
+# =============================================================================
+# DATA PREPROCESSING (Critical: Replicate exactly in batch inference)
+# =============================================================================
+def preprocess_features(df):
+    """
+    Preprocess features for model training.
+    
+    CRITICAL: Document all transformations - batch inference MUST replicate exactly.
+    """
+    pdf = df.toPandas()
+    
+    # 1. Convert Spark DECIMAL to float (REQUIRED - XGBoost can't handle Decimal)
+    decimal_cols = ['revenue', 'price', 'booking_value', 'base_price']
+    for col in decimal_cols:
+        if col in pdf.columns:
+            pdf[col] = pd.to_numeric(pdf[col], errors='coerce')
+    
+    # 2. Encode categorical columns (must match inference)
+    categorical_cols = ['property_type', 'destination', 'user_type', 'country']
+    for col in categorical_cols:
+        if col in pdf.columns and pdf[col].dtype == 'object':
+            pdf[col] = pd.Categorical(pdf[col]).codes
+    
+    # 3. Handle datetime columns
+    if 'check_in_date' in pdf.columns:
+        pdf['check_in_date'] = pd.to_datetime(pdf['check_in_date'])
+    
+    # 4. Fill NaN values
+    pdf = pdf.fillna(0)
+    
+    return pdf
+
+
+# =============================================================================
+# MODEL LOGGING (with all required components for UC)
+# =============================================================================
+def log_model_with_mlflow(
+    model,
+    X_train: pd.DataFrame,
+    metrics: dict,
+    model_name: str,
+    catalog: str,
+    feature_schema: str,
+    gold_schema: str,
+    experiment_name: str,
+    spark
+):
+    """Log model with MLflow best practices."""
+    
+    # 3-level name for Unity Catalog
+    registered_model_name = f"{catalog}.{feature_schema}.{model_name}"
+    
+    # Descriptive run name
+    run_name = get_run_name(model_name, "xgboost", "v2")
+    
+    with mlflow.start_run(run_name=run_name) as run:
+        
+        # 1. Set tags (before other logging)
+        mlflow.set_tags(get_standard_tags(
+            model_name=model_name,
+            domain="your_domain",
+            model_type="regression",
+            algorithm="xgboost",
+            use_case="demand_forecasting",
+            training_table=f"{catalog}.{gold_schema}.fact_booking_daily",
+            feature_store_enabled=False
+        ))
+        
+        # 2. Log dataset (INSIDE run context!)
+        log_training_dataset(spark, catalog, gold_schema, "fact_booking_daily")
+        
+        # 3. Log hyperparameters
+        mlflow.log_params({
+            "max_depth": model.max_depth,
+            "learning_rate": model.learning_rate,
+            "n_estimators": model.n_estimators,
+            "objective": "reg:squarederror"
+        })
+        
+        # 4. Log metrics
+        mlflow.log_metrics(metrics)
+        
+        # 5. Create signature with BOTH input and output (REQUIRED for UC)
+        sample_input = X_train.head(5)
+        sample_output = model.predict(sample_input)
+        signature = infer_signature(sample_input, sample_output)
+        
+        # 6. Log and register model
+        mlflow.xgboost.log_model(
+            model,
+            artifact_path="model",
+            signature=signature,
+            input_example=sample_input,
+            registered_model_name=registered_model_name
+        )
+        
+        return {
+            "run_id": run.info.run_id,
+            "model_uri": f"runs:/{run.info.run_id}/model",
+            "registered_model_name": registered_model_name,
+            "experiment_name": experiment_name
+        }
+
+
+# =============================================================================
+# MAIN ENTRY POINT
+# =============================================================================
+def main():
+    """Main training pipeline."""
+    
+    catalog, gold_schema, feature_schema, model_name = get_parameters()
+    
+    spark = SparkSession.builder.appName(f"{model_name} Training").getOrCreate()
+    
+    # Disable autolog to control what's logged
+    mlflow.autolog(disable=True)
+    
+    # Setup experiment
+    experiment_name = setup_mlflow_experiment(model_name)
+    
+    try:
+        # Your training logic here...
+        
+        print("✓ Training completed successfully!")
+        
+    except Exception as e:
+        import traceback
+        print(f"❌ Error: {str(e)}")
+        print(traceback.format_exc())
+        dbutils.notebook.exit(f"FAILED: {str(e)}")
+    
+    # Signal success (REQUIRED)
+    dbutils.notebook.exit("SUCCESS")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+## Batch Inference Patterns
+
+### Signature-Driven Preprocessing (CRITICAL)
+
+The batch inference script must replicate EXACT preprocessing from training. Type mismatches are the #1 cause of inference failures.
+
+```python
+def load_model_and_signature(catalog: str, feature_schema: str, model_name: str, model_version: str):
+    """Load model and extract signature to know exact expected schema."""
+    
+    full_model_name = f"{catalog}.{feature_schema}.{model_name}"
+    
+    if model_version == "latest":
+        # Get latest version
+        client = mlflow.tracking.MlflowClient()
+        versions = client.search_model_versions(f"name='{full_model_name}'")
+        if versions:
+            latest_version = max(versions, key=lambda v: int(v.version))
+            model_uri = f"models:/{full_model_name}/{latest_version.version}"
+        else:
+            raise Exception(f"No model versions found for {full_model_name}")
+    else:
+        model_uri = f"models:/{full_model_name}/{model_version}"
+    
+    # Load model to get signature
+    model = mlflow.pyfunc.load_model(model_uri)
+    signature = model.metadata.signature
+    
+    print(f"Model Signature:")
+    print(f"  Input columns: {[inp.name for inp in signature.inputs]}")
+    print(f"  Input types: {[(inp.name, str(inp.type)) for inp in signature.inputs]}")
+    
+    return model, model_uri, signature
+
+
+def prepare_features_for_signature(pdf: pd.DataFrame, signature):
+    """
+    Prepare features to EXACTLY match model's expected signature.
+    
+    CRITICAL: Type mismatches cause inference failures.
+    """
+    expected_cols = {inp.name: str(inp.type) for inp in signature.inputs}
+    
+    for col_name, col_type in expected_cols.items():
+        if col_name not in pdf.columns:
+            print(f"⚠️  Missing column: {col_name}")
+            # Add with appropriate default
+            if 'double' in col_type or 'float' in col_type:
+                pdf[col_name] = 0.0
+            elif 'long' in col_type or 'integer' in col_type:
+                pdf[col_name] = 0
+            elif 'boolean' in col_type:
+                pdf[col_name] = False
+            continue
+        
+        # Type conversions
+        if 'float32' in col_type:
+            pdf[col_name] = pdf[col_name].astype('float32')
+        elif 'float64' in col_type or 'double' in col_type:
+            pdf[col_name] = pd.to_numeric(pdf[col_name], errors='coerce').fillna(0.0).astype('float64')
+        elif 'bool' in col_type:
+            if pdf[col_name].dtype in ['int64', 'float64']:
+                pdf[col_name] = pdf[col_name].astype(bool)
+        elif 'long' in col_type:
+            pdf[col_name] = pd.to_numeric(pdf[col_name], errors='coerce').fillna(0).astype('int64')
+        elif 'integer' in col_type:
+            pdf[col_name] = pd.to_numeric(pdf[col_name], errors='coerce').fillna(0).astype('int32')
+    
+    # Select ONLY columns in signature, in signature order
+    signature_col_names = [inp.name for inp in signature.inputs]
+    pdf_final = pdf[signature_col_names]
+    
+    return pdf_final
+```
+
+### Common Type Conversion Issues (from Production)
+
+```python
+# =============================================================================
+# All type conversion issues discovered in batch inference
+# =============================================================================
+
+# Issue 1: Spark DECIMAL → Python float (affects all models)
+# Error: unsupported operand type(s) for -: 'decimal.Decimal' and 'float'
+pdf['revenue'] = pd.to_numeric(pdf['revenue'], errors='coerce')
+
+# Issue 2: Boolean → float64 (Customer LTV model expects this)
+# Error: Cannot safely convert bool to float64
+pdf['is_business'] = pdf['is_business'].astype('float64')
+pdf['is_repeat'] = pdf['is_repeat'].astype('float64')
+
+# Issue 3: int64 → float64 (Customer LTV model)
+# Error: Cannot safely convert int64 to float64
+pdf['total_bookings'] = pdf['total_bookings'].astype('float64')
+
+# Issue 4: float64 → float32 (Demand Predictor trained with float32)
+# Error: Cannot safely convert float64 to float32
+pdf['base_price'] = pdf['base_price'].astype('float32')
+
+# Issue 5: float64 → bool (Conversion Predictor)
+# Error: Cannot safely convert float64 to bool
+pdf['is_weekend'] = pdf['is_weekend'].astype(bool)
+
+# Issue 6: Categorical encoding must match training
+# Error: Incompatible input types for column property_type
+pdf['property_type'] = pd.Categorical(pdf['property_type']).codes
+```
+
+---
+
+## Asset Bundle Configuration
+
+### Training Job Pattern
+
+```yaml
+# resources/ml/ml_training_orchestrator_job.yml
+resources:
+  jobs:
+    ml_training_orchestrator_job:
+      name: "[${bundle.target}] ML Training Orchestrator"
+      description: "Trains all ML models with MLflow 3.1+ LoggedModel tracking"
+      
+      # Shared environment for all tasks
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - "mlflow>=3.1"
+              - "databricks-feature-engineering>=0.6.0"
+              - "xgboost==2.0.3"
+              - "scikit-learn==1.3.2"
+              - "pandas==2.1.4"
+              - "numpy==1.26.2"
+      
+      # Tasks run in PARALLEL (no depends_on)
+      tasks:
+        - task_key: train_demand_predictor
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_ml/models/demand_predictor/train.py
+            base_parameters:  # NOT parameters with --flags!
+              catalog: ${var.catalog}
+              gold_schema: ${var.gold_schema}
+              feature_schema: ${var.ml_schema}
+              model_name: demand_predictor
+          timeout_seconds: 3600
+        
+        - task_key: train_conversion_predictor
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_ml/models/conversion_predictor/train.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.gold_schema}
+              feature_schema: ${var.ml_schema}
+              model_name: conversion_predictor
+          timeout_seconds: 3600
+      
+      # Schedule: Weekly retraining
+      schedule:
+        quartz_cron_expression: "0 0 2 ? * SUN"
+        timezone_id: "America/Los_Angeles"
+        pause_status: PAUSED  # Enable in production
+      
+      timeout_seconds: 14400  # 4 hours total
+      
+      # ❌ DO NOT define experiments in Asset Bundle - creates duplicates!
+      # experiments:
+      #   my_experiment:
+      #     name: /Shared/my_experiment  # Don't do this!
+      
+      tags:
+        environment: ${bundle.target}
+        project: wanderbricks
+        layer: ml
+        job_type: training
+```
+
+### Batch Inference Job Pattern
+
+```yaml
+resources:
+  jobs:
+    ml_batch_inference_job:
+      name: "[${bundle.target}] ML Batch Inference"
+      
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - "mlflow>=3.1"
+              - "databricks-feature-engineering>=0.6.0"
+              - "xgboost==2.0.3"
+              - "pandas==2.1.4"
+      
+      tasks:
+        - task_key: score_demand_predictor
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_ml/inference/batch_inference_fixed.py
+            base_parameters:
+              catalog: ${var.catalog}
+              model_name: demand_predictor
+              input_table: ${var.catalog}.${var.gold_schema}.fact_booking_daily
+              output_table: ${var.catalog}.${var.ml_schema}.demand_predictions
+              model_version: latest
+              feature_schema: ${var.ml_schema}
+```
+
+---
+
+## Unity Catalog Integration
+
+### Model Registration Pattern
+
+```python
+# Set registry URI (at module level, before any MLflow calls)
+mlflow.set_registry_uri("databricks-uc")
+
+# 3-level naming convention (REQUIRED for UC)
+registered_model_name = f"{catalog}.{schema}.{model_name}"
+
+# Log with signature (REQUIRED for UC)
+mlflow.xgboost.log_model(
+    model,
+    artifact_path="model",
+    signature=infer_signature(X_train.head(5), model.predict(X_train.head(5))),
+    input_example=X_train.head(5),
+    registered_model_name=registered_model_name  # Auto-registers to UC
+)
+```
+
+### Loading Models from UC
+
+```python
+# Load specific version
+model_uri = f"models:/{catalog}.{schema}.{model_name}/1"
+model = mlflow.pyfunc.load_model(model_uri)
+
+# Load by alias (if set)
+model_uri = f"models:/{catalog}.{schema}.{model_name}@production"
+
+# Load latest version (requires additional lookup)
+client = mlflow.tracking.MlflowClient()
+versions = client.search_model_versions(f"name='{catalog}.{schema}.{model_name}'")
+latest = max(versions, key=lambda v: int(v.version))
+model_uri = f"models:/{catalog}.{schema}.{model_name}/{latest.version}"
+```
+
+---
+
+## Validation Checklists
+
+### Pre-Development Checklist
+- [ ] Verify ALL column names against Gold layer YAML schemas
+- [ ] Check if dimension tables are SCD2 (has `is_current`?)
+- [ ] Confirm data types (DECIMAL, STRING, BOOLEAN, etc.)
+- [ ] Identify categorical columns needing encoding
+- [ ] Review Feature Store tables if using feature lookups
+- [ ] Document all preprocessing transformations
+
+### MLflow Setup Checklist
+- [ ] Use `/Shared/wanderbricks_ml_{model_name}` experiment path
+- [ ] Do NOT define experiments in Asset Bundle
+- [ ] Inline ALL helper functions (no module imports)
+- [ ] Add `mlflow.autolog(disable=True)` before custom logging
+- [ ] Set `mlflow.set_registry_uri("databricks-uc")` at module level
+
+### Training Pipeline Checklist
+- [ ] Convert DECIMAL columns: `pd.to_numeric(col, errors='coerce')`
+- [ ] Encode categorical columns: `pd.Categorical(col).codes`
+- [ ] Log dataset INSIDE `mlflow.start_run()` context
+- [ ] Create signature with BOTH input AND output
+- [ ] Register model with 3-level name: `catalog.schema.model_name`
+- [ ] Add `dbutils.notebook.exit("SUCCESS")` at end
+- [ ] Do NOT call `spark.stop()` (prevents exit signal)
+
+### Batch Inference Checklist
+- [ ] Load model signature from registered model
+- [ ] Replicate EXACT preprocessing from training
+- [ ] Explicit type conversions for each column
+- [ ] Handle missing columns gracefully
+- [ ] Verify column order matches signature
+- [ ] Test with small batch before full inference
+
+### Job Configuration Checklist
+- [ ] Use `notebook_task` with `base_parameters` (not argparse)
+- [ ] Use `dbutils.widgets.get()` for parameters (not argparse)
+- [ ] Include all required dependencies in environment
+- [ ] Set appropriate timeout
+- [ ] DO NOT define experiments in Asset Bundle
+
+---
+
+## Common Errors and Solutions
+
+| Error | Root Cause | Solution |
+|-------|------------|----------|
+| Experiment shows as "train" | `/Users/` path failed silently | Use `/Shared/wanderbricks_ml_{model_name}` |
+| Dataset not in LoggedModel view | `log_input()` outside run context | Move inside `mlflow.start_run()` |
+| `ModuleNotFoundError` | Import from local module | Inline all helper functions |
+| `Incompatible input types` | Type mismatch in inference | Match training preprocessing exactly |
+| Job SUCCESS but actually failed | No exit signal | Add `dbutils.notebook.exit("SUCCESS")` |
+| `Column 'X' cannot be resolved` | Assumed column name | Verify against Gold YAML schema |
+| `Parent directory does not exist` | User experiment path | Use `/Shared/` path instead |
+| Duplicate experiments | Asset Bundle + script both create | Remove Asset Bundle experiment definitions |
+| `Model signature must contain both input and output` | Only input in signature | Add `model.predict(sample_input)` to `infer_signature` |
+| `DataFrame contains column names that match feature output names` | Column conflict in FeatureLookup | Remove conflicting columns from input DataFrame |
+| `unsupported operand type(s) for -: 'decimal.Decimal' and 'float'` | Spark DECIMAL not converted | Use `pd.to_numeric(col, errors='coerce')` |
+| `'Prophet' object has no attribute 'stan_backend'` | Missing Prophet dependencies | Add `pystan`, `cmdstanpy` to environment |
+| `Can only use .dt accessor with datetimelike values` | Column not datetime | Add `pd.to_datetime()` conversion |
+
+---
+
+## Model-Specific Notes
+
+### Demand Predictor
+- Uses XGBoost Regressor
+- Target: `booking_count`
+- Special: Trigonometric seasonal features (sin/cos month, week)
+- Training with `TimeSeriesSplit` for temporal validation
+
+### Conversion Predictor
+- Uses XGBoost Classifier
+- Target: `is_converted` (binary)
+- Handle single-class edge case in `predict_proba` and `confusion_matrix`
+
+### Pricing Optimizer
+- Uses Gradient Boosting Regressor
+- Target: `optimal_price`
+- Handle division by zero in MAPE calculation
+
+### Customer LTV
+- Uses XGBoost Regressor
+- Target: `predicted_ltv_12m`
+- Boolean columns (`is_business`, `is_repeat`) need float64 conversion
+
+### Revenue Forecaster (Prophet)
+- Currently excluded due to dependency issues
+- Requires `pystan`, `cmdstanpy` dependencies
+- `stan_backend` attribute error needs resolution
+
+### Customer Segmentation (Hybrid ML + Rules)
+- Uses XGBoost Classifier for churn prediction + business rules for segment assignment
+- **Two-Stage Pipeline**:
+  1. Stage 1: Churn Prediction (XGBoost) → outputs `churn_score`
+  2. Stage 2: Segment Assignment (Rules) → outputs `primary_segment`, `secondary_segment`
+- **Key Lessons**:
+  - Use dynamic churn threshold (median-based) instead of fixed 90-day cutoff
+  - Handle PySpark function shadowing: `from pyspark.sql import functions as F` and `import builtins`
+  - Use `builtins.max()`, `builtins.min()`, `builtins.sum()` for Python builtins
+  - Use `F.max()`, `F.count()` etc. for PySpark aggregations
+  - Add safety checks for single-class data before stratified split
+  - Handle LTV predictions table join gracefully (may not have `user_id`)
+- **Output Table**: `customer_segments` (saved directly during training)
+- **Segments**: high_value, at_risk, repeat_travelers, price_sensitive, new_prospects
+
+---
+
+## References
+
+- [MLflow Experiments - Databricks](https://learn.microsoft.com/en-us/azure/databricks/mlflow/experiments)
+- [MLflow 3.1 LoggedModel](https://docs.databricks.com/aws/en/mlflow/logged-model)
+- [Unity Catalog Model Registry](https://learn.microsoft.com/en-us/azure/databricks/machine-learning/manage-model-lifecycle/)
+- [Databricks Feature Store](https://learn.microsoft.com/en-us/azure/databricks/machine-learning/feature-store/)
+- [Feature Engineering Client API](https://learn.microsoft.com/en-us/azure/databricks/machine-learning/feature-store/uc/feature-tables-uc)
+- [Post-Mortem: ML Pipeline Implementation](../../docs/reference/rule-improvement-mlflow-mlmodels-patterns.md)

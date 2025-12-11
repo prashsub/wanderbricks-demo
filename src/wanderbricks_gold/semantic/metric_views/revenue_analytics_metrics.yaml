@@ -1,0 +1,269 @@
+version: "1.1"
+comment: >
+  Comprehensive revenue and booking analytics for vacation rental platform.
+  Optimized for Genie natural language queries and AI/BI dashboards.
+  Provides revenue trends, booking volumes, cancellation rates, and payment metrics
+  with geographic and time-based dimensions for executive reporting and performance analysis.
+
+source: ${catalog}.${gold_schema}.fact_booking_daily
+
+joins:
+  - name: dim_property
+    source: ${catalog}.${gold_schema}.dim_property
+    'on': source.property_id = dim_property.property_id AND dim_property.is_current = true
+  
+  - name: dim_destination
+    source: ${catalog}.${gold_schema}.dim_destination
+    'on': source.destination_id = dim_destination.destination_id
+  
+  - name: dim_date
+    source: ${catalog}.${gold_schema}.dim_date
+    'on': source.check_in_date = dim_date.date
+
+dimensions:
+  - name: check_in_date
+    expr: source.check_in_date
+    comment: Check-in date for the booking used for time-based revenue analysis and trending
+    display_name: Check-in Date
+    synonyms:
+      - date
+      - booking date
+      - arrival date
+      - check in
+  
+  - name: property_id
+    expr: source.property_id
+    comment: Property identifier linking bookings to property listings
+    display_name: Property ID
+    synonyms:
+      - property
+      - listing
+      - property number
+  
+  - name: property_title
+    expr: dim_property.title
+    comment: Property listing title for user-friendly property identification in reports
+    display_name: Property Title
+    synonyms:
+      - property name
+      - listing name
+      - listing title
+  
+  - name: property_type
+    expr: dim_property.property_type
+    comment: Type of property (house, apartment, villa) for category-based revenue analysis
+    display_name: Property Type
+    synonyms:
+      - type
+      - listing type
+      - accommodation type
+  
+  - name: destination
+    expr: dim_destination.destination
+    comment: Destination city or location for geographic revenue breakdown and market analysis
+    display_name: Destination
+    synonyms:
+      - city
+      - location
+      - market
+      - destination city
+  
+  - name: country
+    expr: dim_destination.country
+    comment: Country of the destination for international market performance tracking
+    display_name: Country
+    synonyms:
+      - nation
+      - destination country
+  
+  - name: month_name
+    expr: dim_date.month_name
+    comment: Month name for user-friendly time-based revenue analysis and seasonal patterns
+    display_name: Month
+    synonyms:
+      - month
+      - calendar month
+  
+  - name: year
+    expr: dim_date.year
+    comment: Calendar year for annual revenue analysis and year-over-year comparisons
+    display_name: Year
+    synonyms:
+      - calendar year
+      - fiscal year
+
+measures:
+  - name: total_revenue
+    expr: SUM(source.total_booking_value)
+    comment: >
+      Total booking revenue aggregated across all bookings. Primary revenue KPI
+      for business reporting, financial analysis, and executive dashboards.
+      Represents total value of confirmed and completed bookings.
+    display_name: Total Revenue
+    format:
+      type: currency
+      currency_code: USD
+      decimal_places:
+        type: exact
+        places: 2
+      hide_group_separator: false
+      abbreviation: compact
+    synonyms:
+      - revenue
+      - sales
+      - income
+      - booking value
+      - total sales
+  
+  - name: booking_count
+    expr: SUM(source.booking_count)
+    comment: >
+      Total number of bookings. Volume metric for demand analysis, capacity planning,
+      and understanding booking patterns across properties and destinations.
+    display_name: Booking Count
+    format:
+      type: number
+      decimal_places:
+        type: all
+      hide_group_separator: false
+      abbreviation: compact
+    synonyms:
+      - bookings
+      - reservations
+      - orders
+      - booking volume
+      - number of bookings
+  
+  - name: avg_booking_value
+    expr: AVG(source.avg_booking_value)
+    comment: >
+      Average booking value per reservation. Pricing effectiveness indicator showing
+      typical transaction size. Used for pricing strategy and revenue optimization.
+    display_name: Avg Booking Value
+    format:
+      type: currency
+      currency_code: USD
+      decimal_places:
+        type: exact
+        places: 2
+    synonyms:
+      - average booking
+      - ticket size
+      - average order value
+      - average reservation
+  
+  - name: total_guests
+    expr: SUM(source.total_guests)
+    comment: >
+      Total guest count across all bookings. Occupancy planning metric showing
+      capacity utilization and guest volume patterns for operational planning.
+    display_name: Total Guests
+    format:
+      type: number
+      decimal_places:
+        type: all
+      abbreviation: compact
+    synonyms:
+      - guests
+      - visitors
+      - travelers
+      - guest count
+  
+  - name: avg_nights
+    expr: AVG(source.avg_nights_booked)
+    comment: >
+      Average length of stay in nights. Shows typical booking duration patterns
+      for inventory management and understanding guest behavior.
+    display_name: Avg Nights
+    format:
+      type: number
+      decimal_places:
+        type: exact
+        places: 1
+    synonyms:
+      - average stay
+      - length of stay
+      - average nights
+      - stay duration
+  
+  - name: cancellation_count
+    expr: SUM(source.cancellation_count)
+    comment: >
+      Number of cancelled bookings. Volume metric for understanding cancellation
+      patterns and impact on revenue forecasting.
+    display_name: Cancellations
+    format:
+      type: number
+      decimal_places:
+        type: all
+      abbreviation: compact
+    synonyms:
+      - cancelled
+      - cancelled bookings
+      - cancellations
+      - canceled
+  
+  - name: confirmed_count
+    expr: SUM(source.confirmed_booking_count)
+    comment: >
+      Number of confirmed bookings. Represents finalized reservations used for
+      capacity planning and revenue recognition.
+    display_name: Confirmed Bookings
+    format:
+      type: number
+      decimal_places:
+        type: all
+      abbreviation: compact
+    synonyms:
+      - confirmed
+      - confirmed reservations
+      - confirmed orders
+  
+  - name: cancellation_rate
+    expr: (SUM(source.cancellation_count) / NULLIF(SUM(source.booking_count), 0)) * 100
+    comment: >
+      Percentage of bookings cancelled. Key operational metric for understanding
+      cancellation patterns and impact on revenue. Used for forecasting accuracy.
+    display_name: Cancellation Rate
+    format:
+      type: percentage
+      decimal_places:
+        type: exact
+        places: 1
+    synonyms:
+      - cancel rate
+      - cancellation percentage
+      - cancelled percent
+  
+  - name: payment_rate
+    expr: AVG(source.payment_completion_rate)
+    comment: >
+      Average payment completion rate showing percentage of bookings with completed
+      payments. Indicates payment process effectiveness and revenue realization.
+    display_name: Payment Rate
+    format:
+      type: percentage
+      decimal_places:
+        type: exact
+        places: 1
+    synonyms:
+      - payment completion
+      - payment success
+      - payment percentage
+  
+  - name: property_count
+    expr: COUNT(DISTINCT source.property_id)
+    comment: >
+      Number of unique properties with bookings. Shows active inventory utilization
+      and helps understand portfolio breadth.
+    display_name: Property Count
+    format:
+      type: number
+      decimal_places:
+        type: all
+      abbreviation: compact
+    synonyms:
+      - properties
+      - listings
+      - unique properties
+      - active properties

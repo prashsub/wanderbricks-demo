@@ -1,0 +1,464 @@
+{
+  "datasets": [
+    {
+      "name": "engagement_kpis",
+      "displayName": "Engagement KPIs",
+      "query": "SELECT SUM(view_count) as total_views, SUM(unique_user_views) as unique_users, SUM(click_count) as total_clicks, AVG(conversion_rate) as avg_conversion_rate FROM ${catalog}.${gold_schema}.fact_property_engagement WHERE engagement_date >= :start_date AND engagement_date <= :end_date"
+    },
+    {
+      "name": "conversion_funnel",
+      "displayName": "Conversion Funnel",
+      "query": "SELECT 'Views' as stage, 1 as stage_order, SUM(view_count) as count FROM ${catalog}.${gold_schema}.fact_property_engagement WHERE engagement_date >= :start_date AND engagement_date <= :end_date UNION ALL SELECT 'Clicks' as stage, 2 as stage_order, SUM(click_count) as count FROM ${catalog}.${gold_schema}.fact_property_engagement WHERE engagement_date >= :start_date AND engagement_date <= :end_date UNION ALL SELECT 'Searches' as stage, 3 as stage_order, SUM(search_count) as count FROM ${catalog}.${gold_schema}.fact_property_engagement WHERE engagement_date >= :start_date AND engagement_date <= :end_date ORDER BY stage_order"
+    },
+    {
+      "name": "engagement_trend",
+      "displayName": "Engagement Trend",
+      "query": "SELECT engagement_date, SUM(view_count) as views, SUM(click_count) as clicks, AVG(conversion_rate) as conversion_rate FROM ${catalog}.${gold_schema}.fact_property_engagement WHERE engagement_date >= :start_date AND engagement_date <= :end_date GROUP BY 1 ORDER BY 1"
+    },
+    {
+      "name": "conversion_by_property_type",
+      "displayName": "Conversion by Property Type",
+      "query": "SELECT p.property_type, SUM(e.view_count) as views, SUM(e.click_count) as clicks, AVG(e.conversion_rate) as conversion_rate FROM ${catalog}.${gold_schema}.fact_property_engagement e JOIN ${catalog}.${gold_schema}.dim_property p ON e.property_id = p.property_id WHERE p.is_current = true AND e.engagement_date >= :start_date AND e.engagement_date <= :end_date GROUP BY 1 ORDER BY 4 DESC"
+    },
+    {
+      "name": "top_engaged_properties",
+      "displayName": "Top Engaged Properties",
+      "query": "SELECT p.title as property_title, d.destination, SUM(e.view_count) as total_views, SUM(e.click_count) as total_clicks, AVG(e.conversion_rate) as avg_conversion_rate, AVG(e.avg_time_on_page) as avg_time_on_page FROM ${catalog}.${gold_schema}.fact_property_engagement e JOIN ${catalog}.${gold_schema}.dim_property p ON e.property_id = p.property_id AND p.is_current = true JOIN ${catalog}.${gold_schema}.dim_destination d ON p.destination_id = d.destination_id WHERE e.engagement_date >= :start_date AND e.engagement_date <= :end_date GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 20"
+    },
+    {
+      "name": "low_conversion_properties",
+      "displayName": "Low Conversion Properties",
+      "query": "SELECT p.title as property_title, d.destination, SUM(e.view_count) as total_views, AVG(e.conversion_rate) as avg_conversion_rate, p.base_price FROM ${catalog}.${gold_schema}.fact_property_engagement e JOIN ${catalog}.${gold_schema}.dim_property p ON e.property_id = p.property_id AND p.is_current = true JOIN ${catalog}.${gold_schema}.dim_destination d ON p.destination_id = d.destination_id WHERE e.engagement_date >= :start_date AND e.engagement_date <= :end_date GROUP BY 1, 2, 5 HAVING SUM(e.view_count) >= 50 ORDER BY 4 ASC LIMIT 20"
+    },
+    {
+      "name": "engagement_by_destination",
+      "displayName": "Engagement by Destination",
+      "query": "SELECT d.destination, d.country, SUM(e.view_count) as total_views, SUM(e.click_count) as total_clicks, AVG(e.conversion_rate) as avg_conversion_rate FROM ${catalog}.${gold_schema}.fact_property_engagement e JOIN ${catalog}.${gold_schema}.dim_property p ON e.property_id = p.property_id AND p.is_current = true JOIN ${catalog}.${gold_schema}.dim_destination d ON p.destination_id = d.destination_id WHERE e.engagement_date >= :start_date AND e.engagement_date <= :end_date GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 15"
+    },
+    {
+      "name": "property_type_filter_values",
+      "displayName": "Property Type Filter Values",
+      "query": "SELECT 'All' as property_type UNION ALL SELECT DISTINCT property_type FROM ${catalog}.${gold_schema}.dim_property WHERE is_current = true ORDER BY property_type"
+    }
+  ],
+  
+  "pages": [
+    {
+      "name": "page_funnel_overview",
+      "displayName": "Funnel Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "kpi_total_views",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "engagement_kpis",
+                  "fields": [
+                    {"name": "total_views", "expression": "`total_views`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_views"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Views",
+                "showDescription": true,
+                "description": "Total property page views"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_total_clicks",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "engagement_kpis",
+                  "fields": [
+                    {"name": "total_clicks", "expression": "`total_clicks`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_clicks"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Clicks",
+                "showDescription": true,
+                "description": "Total property element clicks"
+              }
+            }
+          },
+          "position": {"x": 2, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_avg_conversion",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "engagement_kpis",
+                  "fields": [
+                    {"name": "avg_conversion_rate", "expression": "`avg_conversion_rate`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_conversion_rate"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Conversion Rate",
+                "showDescription": true,
+                "description": "Average conversion percentage"
+              }
+            }
+          },
+          "position": {"x": 4, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "chart_engagement_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "engagement_trend",
+                  "fields": [
+                    {"name": "engagement_date", "expression": "`engagement_date`"},
+                    {"name": "views", "expression": "`views`"},
+                    {"name": "clicks", "expression": "`clicks`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "engagement_date",
+                  "displayName": "Date",
+                  "scale": {"type": "temporal"}
+                },
+                "y": {
+                  "fieldName": "views",
+                  "displayName": "Views",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Engagement Trend",
+                "showDescription": true,
+                "description": "Daily views and clicks over time"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 2, "width": 6, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "chart_conversion_by_property_type",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "conversion_by_property_type",
+                  "fields": [
+                    {"name": "property_type", "expression": "`property_type`"},
+                    {"name": "views", "expression": "`views`"},
+                    {"name": "conversion_rate", "expression": "`conversion_rate`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "property_type",
+                  "displayName": "Property Type",
+                  "scale": {"type": "categorical"}
+                },
+                "y": {
+                  "fieldName": "conversion_rate",
+                  "displayName": "Conversion Rate (%)",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Conversion Rate by Property Type",
+                "showDescription": true,
+                "description": "Conversion performance across property types"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 8, "width": 6, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_property_engagement",
+      "displayName": "Property Engagement",
+      "layout": [
+        {
+          "widget": {
+            "name": "table_top_engaged_properties",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_engaged_properties",
+                  "fields": [
+                    {"name": "property_title", "expression": "`property_title`"},
+                    {"name": "destination", "expression": "`destination`"},
+                    {"name": "total_views", "expression": "`total_views`"},
+                    {"name": "total_clicks", "expression": "`total_clicks`"},
+                    {"name": "avg_conversion_rate", "expression": "`avg_conversion_rate`"},
+                    {"name": "avg_time_on_page", "expression": "`avg_time_on_page`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "property_title", "title": "Property"},
+                  {"fieldName": "destination", "title": "Destination"},
+                  {"fieldName": "total_views", "title": "Views"},
+                  {"fieldName": "total_clicks", "title": "Clicks"},
+                  {"fieldName": "avg_conversion_rate", "title": "Conv Rate %", "type": "number"},
+                  {"fieldName": "avg_time_on_page", "title": "Avg Time (s)", "type": "number"}
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Top Engaged Properties",
+                "showDescription": true,
+                "description": "Properties with highest engagement"
+              },
+              "itemsPerPage": 20,
+              "condensed": true,
+              "withRowNumber": true
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 6, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "chart_engagement_by_destination",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "engagement_by_destination",
+                  "fields": [
+                    {"name": "destination", "expression": "`destination`"},
+                    {"name": "total_views", "expression": "`total_views`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "destination",
+                  "displayName": "Destination",
+                  "scale": {"type": "categorical"}
+                },
+                "y": {
+                  "fieldName": "total_views",
+                  "displayName": "Total Views",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Engagement by Destination",
+                "showDescription": true,
+                "description": "Top destinations by engagement"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 6, "width": 6, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_optimization_insights",
+      "displayName": "Optimization Insights",
+      "layout": [
+        {
+          "widget": {
+            "name": "table_low_conversion_properties",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "low_conversion_properties",
+                  "fields": [
+                    {"name": "property_title", "expression": "`property_title`"},
+                    {"name": "destination", "expression": "`destination`"},
+                    {"name": "total_views", "expression": "`total_views`"},
+                    {"name": "avg_conversion_rate", "expression": "`avg_conversion_rate`"},
+                    {"name": "base_price", "expression": "`base_price`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "property_title", "title": "Property"},
+                  {"fieldName": "destination", "title": "Destination"},
+                  {"fieldName": "total_views", "title": "Views"},
+                  {"fieldName": "avg_conversion_rate", "title": "Conv Rate %", "type": "number"},
+                  {"fieldName": "base_price", "title": "Price", "type": "number"}
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Low Conversion Properties",
+                "showDescription": true,
+                "description": "Properties with views but low conversion (improvement opportunities)"
+              },
+              "itemsPerPage": 20,
+              "condensed": true,
+              "withRowNumber": true
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 6, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_global_filters",
+      "displayName": "Global Filters",
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layout": [
+        {
+          "widget": {
+            "name": "filter_property_type",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "property_type_filter_values",
+                  "fields": [
+                    {"name": "property_type", "expression": "`property_type`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "displayName": "Property Type",
+                    "fieldName": "property_type",
+                    "queryName": "main_query"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Property Type"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 2, "height": 2}
+        }
+      ]
+    }
+  ],
+  
+  "parameters": [
+    {
+      "displayName": "Start Date",
+      "keyword": "start_date",
+      "dataType": "DATE",
+      "defaultSelection": {
+        "values": {
+          "dataType": "DATE",
+          "values": [{"value": "2024-01-01"}]
+        }
+      }
+    },
+    {
+      "displayName": "End Date",
+      "keyword": "end_date",
+      "dataType": "DATE",
+      "defaultSelection": {
+        "values": {
+          "dataType": "DATE",
+          "values": [{"value": "2024-12-31"}]
+        }
+      }
+    }
+  ],
+  
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {"light": "#F7F9FA", "dark": "#0B0E11"},
+      "widgetBackgroundColor": {"light": "#FFFFFF", "dark": "#1A1D21"},
+      "widgetBorderColor": {"light": "#E0E4E8", "dark": "#2A2E33"},
+      "fontColor": {"light": "#11171C", "dark": "#E8ECF0"},
+      "selectionColor": {"light": "#077A9D", "dark": "#8ACAE7"},
+      "visualizationColors": [
+        "#077A9D", "#00A972", "#FFAB00", "#FF3621",
+        "#8BCAE7", "#99DDB4", "#FCA4A1", "#AB4057",
+        "#6B4FBB", "#BF7080"
+      ],
+      "widgetHeaderAlignment": "LEFT"
+    },
+    "genieSpace": {"isEnabled": false}
+  }
+}
+

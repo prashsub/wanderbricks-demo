@@ -1,0 +1,1090 @@
+{
+  "version": 1,
+  "displayName": "Wanderbricks Lakehouse Monitoring Dashboard",
+  "description": "Real-time monitoring of data quality and business metrics across Gold layer tables with custom Lakehouse Monitoring metrics",
+  "datasets": [
+    {
+      "name": "revenue_kpis",
+      "displayName": "Revenue KPIs",
+      "query": "-- Latest revenue metrics from fact_booking_daily monitor\nSELECT \n    MAX(window.end) as latest_date,\n    MAX(CASE WHEN custom_metric_name = 'daily_revenue' THEN custom_metric_value END) as daily_revenue,\n    MAX(CASE WHEN custom_metric_name = 'avg_booking_value' THEN custom_metric_value END) as avg_booking_value,\n    MAX(CASE WHEN custom_metric_name = 'total_bookings' THEN custom_metric_value END) as total_bookings,\n    MAX(CASE WHEN custom_metric_name = 'total_cancellations' THEN custom_metric_value END) as total_cancellations,\n    MAX(CASE WHEN custom_metric_name = 'cancellation_rate' THEN custom_metric_value END) as cancellation_rate\nFROM {{catalog}}.{{schema}}__tables__fact_booking_daily_profile_metrics\nWHERE column_name = ':table'\n  AND window.end >= DATE_ADD(CURRENT_DATE(), -7)\nGROUP BY 1\nORDER BY latest_date DESC\nLIMIT 1"
+    },
+    {
+      "name": "revenue_trend",
+      "displayName": "Revenue Trend (7 Days)",
+      "query": "-- Revenue metrics over time\nSELECT \n    DATE(window.end) as date,\n    MAX(CASE WHEN custom_metric_name = 'daily_revenue' THEN custom_metric_value END) as daily_revenue,\n    MAX(CASE WHEN custom_metric_name = 'avg_booking_value' THEN custom_metric_value END) as avg_booking_value,\n    MAX(CASE WHEN custom_metric_name = 'total_bookings' THEN custom_metric_value END) as total_bookings\nFROM {{catalog}}.{{schema}}__tables__fact_booking_daily_profile_metrics\nWHERE column_name = ':table'\n  AND window.end >= DATE_ADD(CURRENT_DATE(), -7)\nGROUP BY date\nORDER BY date"
+    },
+    {
+      "name": "revenue_drift_alerts",
+      "displayName": "Revenue Drift Alerts",
+      "query": "-- Revenue drift detection\nSELECT \n    DATE(window.end) as date,\n    drift_metric_value as current_revenue,\n    pct_change as revenue_change_pct,\n    CASE \n        WHEN pct_change < -20 THEN 'Critical Drop'\n        WHEN pct_change < -10 THEN 'Warning'\n        WHEN pct_change > 10 THEN 'Spike'\n        ELSE 'Normal'\n    END as alert_level\nFROM {{catalog}}.{{schema}}__tables__fact_booking_daily_drift_metrics\nWHERE column_name = ':table'\n  AND drift_metric_name = 'revenue_vs_baseline'\n  AND window.end >= DATE_ADD(CURRENT_DATE(), -30)\nORDER BY date DESC"
+    },
+    {
+      "name": "revenue_by_destination",
+      "displayName": "Revenue by Destination",
+      "query": "-- Revenue sliced by destination\nSELECT \n    DATE(window.end) as date,\n    slice_value as destination_id,\n    custom_metric_value as daily_revenue\nFROM {{catalog}}.{{schema}}__tables__fact_booking_daily_profile_metrics\nWHERE column_name = ':table'\n  AND slice_key = 'destination_id'\n  AND custom_metric_name = 'daily_revenue'\n  AND window.end >= DATE_ADD(CURRENT_DATE(), -7)\nORDER BY date DESC, daily_revenue DESC\nLIMIT 100"
+    },
+    {
+      "name": "engagement_kpis",
+      "displayName": "Engagement KPIs",
+      "query": "-- Latest engagement metrics from fact_property_engagement monitor\nSELECT \n    MAX(window.end) as latest_date,\n    MAX(CASE WHEN custom_metric_name = 'total_views' THEN custom_metric_value END) as total_views,\n    MAX(CASE WHEN custom_metric_name = 'total_clicks' THEN custom_metric_value END) as total_clicks,\n    MAX(CASE WHEN custom_metric_name = 'avg_conversion' THEN custom_metric_value END) as avg_conversion,\n    MAX(CASE WHEN custom_metric_name = 'engagement_health' THEN custom_metric_value END) as engagement_health\nFROM {{catalog}}.{{schema}}__tables__fact_property_engagement_profile_metrics\nWHERE column_name = ':table'\n  AND window.end >= DATE_ADD(CURRENT_DATE(), -7)\nGROUP BY 1\nORDER BY latest_date DESC\nLIMIT 1"
+    },
+    {
+      "name": "engagement_trend",
+      "displayName": "Engagement Trend (7 Days)",
+      "query": "-- Engagement metrics over time\nSELECT \n    DATE(window.end) as date,\n    MAX(CASE WHEN custom_metric_name = 'total_views' THEN custom_metric_value END) as total_views,\n    MAX(CASE WHEN custom_metric_name = 'total_clicks' THEN custom_metric_value END) as total_clicks,\n    MAX(CASE WHEN custom_metric_name = 'engagement_health' THEN custom_metric_value END) as engagement_health\nFROM {{catalog}}.{{schema}}__tables__fact_property_engagement_profile_metrics\nWHERE column_name = ':table'\n  AND window.end >= DATE_ADD(CURRENT_DATE(), -7)\nGROUP BY date\nORDER BY date"
+    },
+    {
+      "name": "property_kpis",
+      "displayName": "Property KPIs",
+      "query": "-- Latest property metrics from dim_property monitor\nSELECT \n    MAX(window.end) as latest_date,\n    MAX(CASE WHEN custom_metric_name = 'active_listings' THEN custom_metric_value END) as active_listings,\n    MAX(CASE WHEN custom_metric_name = 'avg_price' THEN custom_metric_value END) as avg_price,\n    MAX(CASE WHEN custom_metric_name = 'price_variance' THEN custom_metric_value END) as price_variance\nFROM {{catalog}}.{{schema}}__tables__dim_property_profile_metrics\nWHERE column_name = ':table'\nGROUP BY 1\nORDER BY latest_date DESC\nLIMIT 1"
+    },
+    {
+      "name": "property_by_type",
+      "displayName": "Properties by Type",
+      "query": "-- Property metrics sliced by type\nSELECT \n    slice_value as property_type,\n    MAX(CASE WHEN custom_metric_name = 'active_listings' THEN custom_metric_value END) as active_listings,\n    MAX(CASE WHEN custom_metric_name = 'avg_price' THEN custom_metric_value END) as avg_price\nFROM {{catalog}}.{{schema}}__tables__dim_property_profile_metrics\nWHERE column_name = ':table'\n  AND slice_key = 'property_type'\nGROUP BY property_type\nORDER BY active_listings DESC"
+    },
+    {
+      "name": "host_kpis",
+      "displayName": "Host KPIs",
+      "query": "-- Latest host metrics from dim_host monitor\nSELECT \n    MAX(window.end) as latest_date,\n    MAX(CASE WHEN custom_metric_name = 'active_hosts' THEN custom_metric_value END) as active_hosts,\n    MAX(CASE WHEN custom_metric_name = 'total_current_hosts' THEN custom_metric_value END) as total_current_hosts,\n    MAX(CASE WHEN custom_metric_name = 'avg_rating' THEN custom_metric_value END) as avg_rating,\n    MAX(CASE WHEN custom_metric_name = 'verification_rate' THEN custom_metric_value END) as verification_rate\nFROM {{catalog}}.{{schema}}__tables__dim_host_profile_metrics\nWHERE column_name = ':table'\nGROUP BY 1\nORDER BY latest_date DESC\nLIMIT 1"
+    },
+    {
+      "name": "host_by_country",
+      "displayName": "Hosts by Country",
+      "query": "-- Host metrics sliced by country\nSELECT \n    slice_value as country,\n    MAX(CASE WHEN custom_metric_name = 'active_hosts' THEN custom_metric_value END) as active_hosts,\n    MAX(CASE WHEN custom_metric_name = 'verification_rate' THEN custom_metric_value END) as verification_rate\nFROM {{catalog}}.{{schema}}__tables__dim_host_profile_metrics\nWHERE column_name = ':table'\n  AND slice_key = 'country'\nGROUP BY country\nORDER BY active_hosts DESC\nLIMIT 10"
+    },
+    {
+      "name": "customer_kpis",
+      "displayName": "Customer KPIs",
+      "query": "-- Latest customer metrics from dim_user monitor\nSELECT \n    MAX(window.end) as latest_date,\n    MAX(CASE WHEN custom_metric_name = 'total_customers' THEN custom_metric_value END) as total_customers,\n    MAX(CASE WHEN custom_metric_name = 'business_customers' THEN custom_metric_value END) as business_customers,\n    MAX(CASE WHEN custom_metric_name = 'business_customer_rate' THEN custom_metric_value END) as business_customer_rate\nFROM {{catalog}}.{{schema}}__tables__dim_user_profile_metrics\nWHERE column_name = ':table'\nGROUP BY 1\nORDER BY latest_date DESC\nLIMIT 1"
+    },
+    {
+      "name": "customer_growth",
+      "displayName": "Customer Growth Trend",
+      "query": "-- Customer growth drift detection\nSELECT \n    DATE(window.end) as date,\n    drift_metric_value as total_customers,\n    pct_change as growth_rate_pct\nFROM {{catalog}}.{{schema}}__tables__dim_user_drift_metrics\nWHERE column_name = ':table'\n  AND drift_metric_name = 'customer_growth'\n  AND window.end >= DATE_ADD(CURRENT_DATE(), -30)\nORDER BY date DESC"
+    },
+    {
+      "name": "all_alerts",
+      "displayName": "All Monitoring Alerts",
+      "query": "-- Unified alert view across all monitors\nSELECT 'Revenue Drop' as alert_type, DATE(window.end) as alert_date, \n       pct_change as metric_value, 'Critical' as severity\nFROM {{catalog}}.{{schema}}__tables__fact_booking_daily_drift_metrics\nWHERE column_name = ':table' AND drift_metric_name = 'revenue_vs_baseline'\n  AND pct_change < -20 AND window.end >= DATE_ADD(CURRENT_DATE(), -7)\n\nUNION ALL\n\nSELECT 'High Cancellation' as alert_type, DATE(window.end) as alert_date,\n       custom_metric_value as metric_value, 'Warning' as severity\nFROM {{catalog}}.{{schema}}__tables__fact_booking_daily_profile_metrics\nWHERE column_name = ':table' AND custom_metric_name = 'cancellation_rate'\n  AND custom_metric_value > 15 AND window.end >= DATE_ADD(CURRENT_DATE(), -7)\n\nUNION ALL\n\nSELECT 'Low Engagement' as alert_type, DATE(window.end) as alert_date,\n       custom_metric_value as metric_value, 'Warning' as severity\nFROM {{catalog}}.{{schema}}__tables__fact_property_engagement_profile_metrics\nWHERE column_name = ':table' AND custom_metric_name = 'engagement_health'\n  AND custom_metric_value < 5 AND window.end >= DATE_ADD(CURRENT_DATE(), -7)\n\nORDER BY alert_date DESC, severity"
+    }
+  ],
+  "pages": [
+    {
+      "name": "page_global_filters",
+      "displayName": "Global Filters",
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layout": []
+    },
+    {
+      "name": "page_overview",
+      "displayName": "Monitoring Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "kpi_daily_revenue",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "revenue_kpis",
+                  "fields": [
+                    {"name": "daily_revenue", "expression": "`daily_revenue`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "daily_revenue",
+                  "displayName": "Daily Revenue"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Daily Revenue",
+                "showDescription": true,
+                "description": "Total booking revenue (last 7 days)"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 1, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_avg_booking",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "revenue_kpis",
+                  "fields": [
+                    {"name": "avg_booking_value", "expression": "`avg_booking_value`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_booking_value",
+                  "displayName": "Avg Booking Value"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Booking Value",
+                "showDescription": true,
+                "description": "Average booking amount"
+              }
+            }
+          },
+          "position": {"x": 1, "y": 0, "width": 1, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_cancellation_rate",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "revenue_kpis",
+                  "fields": [
+                    {"name": "cancellation_rate", "expression": "`cancellation_rate`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "cancellation_rate",
+                  "displayName": "Cancellation Rate %"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Cancellation Rate",
+                "showDescription": true,
+                "description": "Percentage of cancelled bookings"
+              }
+            }
+          },
+          "position": {"x": 2, "y": 0, "width": 1, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_engagement_health",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "engagement_kpis",
+                  "fields": [
+                    {"name": "engagement_health", "expression": "`engagement_health`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "engagement_health",
+                  "displayName": "Engagement Health %"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Engagement Health",
+                "showDescription": true,
+                "description": "Click-through rate (clicks/views)"
+              }
+            }
+          },
+          "position": {"x": 3, "y": 0, "width": 1, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_active_listings",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "property_kpis",
+                  "fields": [
+                    {"name": "active_listings", "expression": "`active_listings`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "active_listings",
+                  "displayName": "Active Listings"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Active Listings",
+                "showDescription": true,
+                "description": "Total active property listings"
+              }
+            }
+          },
+          "position": {"x": 4, "y": 0, "width": 1, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_total_customers",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "customer_kpis",
+                  "fields": [
+                    {"name": "total_customers", "expression": "`total_customers`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_customers",
+                  "displayName": "Total Customers"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Customers",
+                "showDescription": true,
+                "description": "Active customer count"
+              }
+            }
+          },
+          "position": {"x": 5, "y": 0, "width": 1, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "chart_revenue_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "revenue_trend",
+                  "fields": [
+                    {"name": "date", "expression": "`date`"},
+                    {"name": "daily_revenue", "expression": "`daily_revenue`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "date",
+                  "displayName": "Date",
+                  "scale": {"type": "temporal"}
+                },
+                "y": {
+                  "fieldName": "daily_revenue",
+                  "displayName": "Revenue",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Daily Revenue Trend",
+                "showDescription": true,
+                "description": "7-day revenue trend from monitoring"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 2, "width": 3, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "chart_engagement_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "engagement_trend",
+                  "fields": [
+                    {"name": "date", "expression": "`date`"},
+                    {"name": "engagement_health", "expression": "`engagement_health`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "date",
+                  "displayName": "Date",
+                  "scale": {"type": "temporal"}
+                },
+                "y": {
+                  "fieldName": "engagement_health",
+                  "displayName": "Engagement Health %",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Engagement Health Trend",
+                "showDescription": true,
+                "description": "Click-through rate over 7 days"
+              }
+            }
+          },
+          "position": {"x": 3, "y": 2, "width": 3, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "table_all_alerts",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "all_alerts",
+                  "fields": [
+                    {"name": "alert_type", "expression": "`alert_type`"},
+                    {"name": "alert_date", "expression": "`alert_date`"},
+                    {"name": "metric_value", "expression": "`metric_value`"},
+                    {"name": "severity", "expression": "`severity`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "frame": {
+                "showTitle": true,
+                "title": "Monitoring Alerts (Last 7 Days)",
+                "showDescription": true,
+                "description": "Active alerts across all monitors"
+              },
+              "encodings": {
+                "columns": [
+                  {"fieldName": "alert_type", "title": "Alert Type"},
+                  {
+                    "fieldName": "alert_date", 
+                    "title": "Date",
+                    "dateTimeFormat": "yyyy-MM-dd",
+                    "type": "datetime",
+                    "displayAs": "datetime"
+                  },
+                  {"fieldName": "metric_value", "title": "Value"},
+                  {"fieldName": "severity", "title": "Severity"}
+                ]
+              },
+              "itemsPerPage": 25,
+              "paginationSize": "default",
+              "condensed": true,
+              "withRowNumber": false
+            }
+          },
+          "position": {"x": 0, "y": 8, "width": 6, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_revenue",
+      "displayName": "Revenue Monitoring",
+      "layout": [
+        {
+          "widget": {
+            "name": "kpi_revenue_total_bookings",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "revenue_kpis",
+                  "fields": [
+                    {"name": "total_bookings", "expression": "`total_bookings`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_bookings",
+                  "displayName": "Total Bookings"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Bookings",
+                "showDescription": true,
+                "description": "Sum of all bookings (last 7 days)"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_revenue_cancellations",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "revenue_kpis",
+                  "fields": [
+                    {"name": "total_cancellations", "expression": "`total_cancellations`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_cancellations",
+                  "displayName": "Cancellations"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Cancellations",
+                "showDescription": true,
+                "description": "Cancelled bookings count"
+              }
+            }
+          },
+          "position": {"x": 2, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_revenue_cancel_rate",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "revenue_kpis",
+                  "fields": [
+                    {"name": "cancellation_rate", "expression": "`cancellation_rate`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "cancellation_rate",
+                  "displayName": "Rate %"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Cancellation Rate %",
+                "showDescription": true,
+                "description": "Derived metric: cancellations/bookings"
+              }
+            }
+          },
+          "position": {"x": 4, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "chart_revenue_multi_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "revenue_trend",
+                  "fields": [
+                    {"name": "date", "expression": "`date`"},
+                    {"name": "daily_revenue", "expression": "`daily_revenue`"},
+                    {"name": "avg_booking_value", "expression": "`avg_booking_value`"},
+                    {"name": "total_bookings", "expression": "`total_bookings`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "date",
+                  "displayName": "Date",
+                  "scale": {"type": "temporal"}
+                },
+                "y": {
+                  "fieldName": "daily_revenue",
+                  "displayName": "Metric Value",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue Metrics Trend",
+                "showDescription": true,
+                "description": "Daily revenue, avg booking value, and booking count"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 2, "width": 6, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "chart_revenue_drift",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "revenue_drift_alerts",
+                  "fields": [
+                    {"name": "date", "expression": "`date`"},
+                    {"name": "revenue_change_pct", "expression": "`revenue_change_pct`"},
+                    {"name": "alert_level", "expression": "`alert_level`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "date",
+                  "displayName": "Date",
+                  "scale": {"type": "temporal"}
+                },
+                "y": {
+                  "fieldName": "revenue_change_pct",
+                  "displayName": "Revenue Change %",
+                  "scale": {"type": "quantitative"}
+                },
+                "color": {
+                  "fieldName": "alert_level",
+                  "displayName": "Alert Level",
+                  "scale": {"type": "categorical"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue Drift Detection",
+                "showDescription": true,
+                "description": "Period-over-period revenue changes (30 days)"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 8, "width": 6, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "chart_revenue_by_destination",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "revenue_by_destination",
+                  "fields": [
+                    {"name": "destination_id", "expression": "`destination_id`"},
+                    {"name": "daily_revenue", "expression": "`daily_revenue`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "destination_id",
+                  "displayName": "Destination",
+                  "scale": {"type": "categorical"}
+                },
+                "y": {
+                  "fieldName": "daily_revenue",
+                  "displayName": "Daily Revenue",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue by Destination",
+                "showDescription": true,
+                "description": "Sliced metric: revenue by destination_id"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 14, "width": 6, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_engagement",
+      "displayName": "Engagement Monitoring",
+      "layout": [
+        {
+          "widget": {
+            "name": "kpi_eng_views",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "engagement_kpis",
+                  "fields": [
+                    {"name": "total_views", "expression": "`total_views`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_views",
+                  "displayName": "Total Views"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Views",
+                "showDescription": true,
+                "description": "Property view count (last 7 days)"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_eng_clicks",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "engagement_kpis",
+                  "fields": [
+                    {"name": "total_clicks", "expression": "`total_clicks`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_clicks",
+                  "displayName": "Total Clicks"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Clicks",
+                "showDescription": true,
+                "description": "Property click count"
+              }
+            }
+          },
+          "position": {"x": 2, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_eng_conversion",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "engagement_kpis",
+                  "fields": [
+                    {"name": "avg_conversion", "expression": "`avg_conversion`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_conversion",
+                  "displayName": "Conversion %"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Conversion Rate",
+                "showDescription": true,
+                "description": "View to booking conversion"
+              }
+            }
+          },
+          "position": {"x": 4, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "chart_engagement_multi",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "engagement_trend",
+                  "fields": [
+                    {"name": "date", "expression": "`date`"},
+                    {"name": "total_views", "expression": "`total_views`"},
+                    {"name": "total_clicks", "expression": "`total_clicks`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "date",
+                  "displayName": "Date",
+                  "scale": {"type": "temporal"}
+                },
+                "y": {
+                  "fieldName": "total_views",
+                  "displayName": "Count",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Views & Clicks Trend",
+                "showDescription": true,
+                "description": "Engagement metrics over 7 days"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 2, "width": 6, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_dimension_monitors",
+      "displayName": "Dimension Monitors",
+      "layout": [
+        {
+          "widget": {
+            "name": "kpi_dim_prop_avg_price",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "property_kpis",
+                  "fields": [
+                    {"name": "avg_price", "expression": "`avg_price`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_price",
+                  "displayName": "Avg Property Price"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Property Price",
+                "showDescription": true,
+                "description": "Average base price of active listings"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_dim_host_active",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "host_kpis",
+                  "fields": [
+                    {"name": "active_hosts", "expression": "`active_hosts`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "active_hosts",
+                  "displayName": "Active Hosts"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Active Hosts",
+                "showDescription": true,
+                "description": "Currently active verified hosts"
+              }
+            }
+          },
+          "position": {"x": 2, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_dim_host_verification",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "host_kpis",
+                  "fields": [
+                    {"name": "verification_rate", "expression": "`verification_rate`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "verification_rate",
+                  "displayName": "Verification Rate %"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Host Verification Rate",
+                "showDescription": true,
+                "description": "Derived: verified hosts / total hosts"
+              }
+            }
+          },
+          "position": {"x": 4, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "chart_prop_by_type",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "property_by_type",
+                  "fields": [
+                    {"name": "property_type", "expression": "`property_type`"},
+                    {"name": "active_listings", "expression": "`active_listings`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "property_type",
+                  "displayName": "Property Type",
+                  "scale": {"type": "categorical"}
+                },
+                "y": {
+                  "fieldName": "active_listings",
+                  "displayName": "Count",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Properties by Type",
+                "showDescription": true,
+                "description": "Active listings sliced by property_type"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 2, "width": 3, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "chart_host_by_country",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "host_by_country",
+                  "fields": [
+                    {"name": "country", "expression": "`country`"},
+                    {"name": "active_hosts", "expression": "`active_hosts`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "country",
+                  "displayName": "Country",
+                  "scale": {"type": "categorical"}
+                },
+                "y": {
+                  "fieldName": "active_hosts",
+                  "displayName": "Active Hosts",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Hosts by Country (Top 10)",
+                "showDescription": true,
+                "description": "Active hosts sliced by country"
+              }
+            }
+          },
+          "position": {"x": 3, "y": 2, "width": 3, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "chart_customer_growth",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "customer_growth",
+                  "fields": [
+                    {"name": "date", "expression": "`date`"},
+                    {"name": "total_customers", "expression": "`total_customers`"},
+                    {"name": "growth_rate_pct", "expression": "`growth_rate_pct`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "date",
+                  "displayName": "Date",
+                  "scale": {"type": "temporal"}
+                },
+                "y": {
+                  "fieldName": "total_customers",
+                  "displayName": "Total Customers",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Customer Growth Trend",
+                "showDescription": true,
+                "description": "Drift metric: customer_growth (30 days)"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 8, "width": 6, "height": 6}
+        }
+      ]
+    }
+  ],
+  "parameters": [
+    {
+      "displayName": "Catalog",
+      "keyword": "catalog",
+      "dataType": "STRING",
+      "defaultSelection": {
+        "values": {
+          "dataType": "STRING",
+          "values": [{"value": "prashanth_subrahmanyam_catalog"}]
+        }
+      }
+    },
+    {
+      "displayName": "Schema",
+      "keyword": "schema",
+      "dataType": "STRING",
+      "defaultSelection": {
+        "values": {
+          "dataType": "STRING",
+          "values": [{"value": "wanderbricks_gold"}]
+        }
+      }
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {"light": "#F7F9FA", "dark": "#0B0E11"},
+      "widgetBackgroundColor": {"light": "#FFFFFF", "dark": "#1A1D21"},
+      "widgetBorderColor": {"light": "#E0E4E8", "dark": "#2A2E33"},
+      "fontColor": {"light": "#11171C", "dark": "#E8ECF0"},
+      "selectionColor": {"light": "#077A9D", "dark": "#8ACAE7"},
+      "visualizationColors": [
+        "#077A9D",
+        "#00A972",
+        "#FFAB00",
+        "#FF3621",
+        "#8BCAE7",
+        "#99DDB4",
+        "#FCA4A1",
+        "#AB4057",
+        "#6B4FBB",
+        "#BF7080"
+      ],
+      "widgetHeaderAlignment": "LEFT"
+    },
+    "genieSpace": {"isEnabled": false}
+  }
+}
+

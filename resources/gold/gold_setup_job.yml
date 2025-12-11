@@ -1,0 +1,67 @@
+# Wanderbricks Gold Layer - Setup Job
+# 
+# Creates Gold layer tables from YAML schema definitions with constraints.
+# 
+# Tasks:
+# 1. setup_all_tables - Read YAMLs and create tables with PKs
+# 2. add_fk_constraints - Apply FK constraints after all PKs exist
+#
+# Note: Semantic layer (TVFs, Metric Views) are created by semantic_setup_job
+#
+# Usage:
+#   databricks bundle run gold_setup_job -t dev
+
+resources:
+  jobs:
+    gold_setup_job:
+      name: "[${bundle.target}] Wanderbricks Gold Layer - Setup"
+      description: "Creates Gold layer tables from YAML schema definitions with constraints"
+      
+      # PyYAML dependency required for YAML parsing
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - "pyyaml>=6.0"
+      
+      tasks:
+        # Task 1: Create all tables from YAMLs
+        - task_key: setup_all_tables
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_gold/setup_tables.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.gold_schema}
+              domain: all  # Create tables for all domains
+          timeout_seconds: 1800  # 30 minutes
+        
+        # Task 2: Add FK constraints (after PKs exist)
+        - task_key: add_fk_constraints
+          depends_on:
+            - task_key: setup_all_tables
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_gold/add_fk_constraints.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.gold_schema}
+              domain: all
+          timeout_seconds: 900  # 15 minutes
+      
+      # Email notifications
+      email_notifications:
+        on_failure:
+          - prashanth.subrahmanyam@databricks.com
+        on_success:
+          - prashanth.subrahmanyam@databricks.com
+      
+      # Tags
+      tags:
+        environment: ${bundle.target}
+        project: wanderbricks
+        layer: gold
+        job_type: setup
+        compute_type: serverless
+

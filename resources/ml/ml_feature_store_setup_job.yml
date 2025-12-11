@@ -1,0 +1,43 @@
+# Feature Store Setup Job
+# Creates feature tables for ML model training
+
+resources:
+  jobs:
+    ml_feature_store_setup_job:
+      name: "[${bundle.target}] ML Feature Store Setup"
+      description: "Creates and updates feature tables for machine learning models"
+      
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - "databricks-feature-engineering>=0.6.0"
+              - "prophet==1.1.5"
+              - "xgboost==2.0.3"
+              - "scikit-learn==1.3.2"
+      
+      tasks:
+        - task_key: setup_feature_tables
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_ml/feature_store/setup_feature_tables.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.gold_schema}
+              feature_schema: ${var.ml_schema}
+          timeout_seconds: 3600
+      
+      email_notifications:
+        on_failure:
+          - data-engineering@company.com
+        on_success:
+          - data-engineering@company.com
+      
+      tags:
+        environment: ${bundle.target}
+        project: wanderbricks
+        layer: ml
+        compute_type: serverless
+        job_type: setup
+

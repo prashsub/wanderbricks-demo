@@ -1,0 +1,79 @@
+# Wanderbricks Silver Layer - DLT Pipeline (Serverless)
+# Reference: https://github.com/databricks/bundle-examples/blob/main/knowledge_base/pipeline_with_schema/resources/pipeline.yml
+# 
+# Delta Live Tables streaming pipeline with data quality expectations loaded from Delta table.
+# Uses serverless compute for automatic scaling and cost optimization.
+
+resources:
+  pipelines:
+    silver_dlt_pipeline:
+      name: "[${bundle.target}] Wanderbricks Silver Layer Pipeline"
+      
+      # Pipeline root folder (Lakeflow Pipelines Editor best practice)
+      # All pipeline assets must be within this root folder
+      # Reference: https://docs.databricks.com/aws/en/ldp/multi-file-editor#root-folder
+      root_path: ../../src/wanderbricks_silver
+      
+      # DLT Direct Publishing Mode (Modern Pattern)
+      # ✅ Use 'schema' field (not 'target' - deprecated)
+      catalog: ${var.catalog}
+      schema: ${var.silver_schema}
+      
+      # DLT Libraries (Python notebooks)
+      libraries:
+        - notebook:
+            path: ../../src/wanderbricks_silver/silver_dimensions.py
+        - notebook:
+            path: ../../src/wanderbricks_silver/silver_bookings.py
+        - notebook:
+            path: ../../src/wanderbricks_silver/silver_engagement.py
+        - notebook:
+            path: ../../src/wanderbricks_silver/silver_accuweather.py
+        - notebook:
+            path: ../../src/wanderbricks_silver/data_quality_monitoring.py
+      
+      # Pipeline Configuration (passed to notebooks)
+      # Use fully qualified table names in notebooks: {catalog}.{schema}.{table}
+      configuration:
+        catalog: ${var.catalog}
+        bronze_schema: ${var.bronze_schema}
+        # silver_schema for dq_rules_loader uses the actual DLT-prefixed schema
+        # where dq_rules table is located (matches silver_tables_schema in dev)
+        silver_schema: ${var.silver_tables_schema}
+        pipelines.enableTrackHistory: "true"
+      
+      # Serverless Compute
+      serverless: true
+      
+      # Photon Engine
+      photon: true
+      
+      # Channel (CURRENT = latest features)
+      channel: CURRENT
+      
+      # Continuous vs Triggered
+      continuous: false
+      
+      # Development Mode (faster iteration, auto-recovery)
+      development: true
+      
+      # Edition (ADVANCED for expectations, SCD, etc.)
+      edition: ADVANCED
+      
+      # Notifications
+      notifications:
+        - alerts:
+            - on-update-failure
+            - on-update-fatal-failure
+            - on-flow-failure
+          email_recipients:
+            - data-engineering@company.com
+      
+      # Tags
+      tags:
+        environment: ${bundle.target}
+        project: wanderbricks
+        layer: silver
+        pipeline_type: medallion
+        compute_type: serverless
+

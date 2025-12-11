@@ -1,0 +1,190 @@
+table_name: fact_weather_daily
+domain: weather
+bronze_source: forecast_daily
+silver_source: silver_forecast_daily
+description: 'Gold layer daily weather forecast fact table with temperature and precipitation
+  metrics. Business: Primary source for analyzing weather impact on bookings and
+  property performance. Daily grain enables trend analysis, seasonal patterns, and
+  weather-based recommendations. Each row represents weather forecast for one location
+  on one date. Used for property performance analysis by weather, seasonal booking
+  patterns, and weather-based marketing. Technical: Grain is one row per locationKey
+  per date. Pre-calculated temperature ranges and precipitation flags for query performance.
+  Updates via Delta MERGE from Silver with forecast data.'
+
+grain: One row per locationKey per date (daily weather forecast)
+primary_key:
+  columns:
+  - locationKey
+  - date
+  composite: true
+foreign_keys:
+- columns:
+  - location_key
+  references: dim_weather_location(location_key)
+  nullable: false
+columns:
+- name: locationKey
+  type: STRING
+  nullable: false
+  description: 'AccuWeather location key. Business: Links to weather location dimension.
+    Technical: Natural key from AccuWeather API, part of composite primary key.'
+  business_description: Weather location identifier
+  technical_description: AccuWeather location key from API
+- name: location_key
+  type: STRING
+  nullable: false
+  description: 'Surrogate key for weather location. Business: Foreign key to dim_weather_location
+    for dimension joins. Technical: SHA256 hash of locationKey for consistent key
+    generation.'
+  business_description: Link to weather location dimension
+  technical_description: Surrogate key FK to dim_weather_location
+- name: date
+  type: DATE
+  nullable: false
+  description: 'Forecast date. Business: The date of the weather forecast, used for
+    time-based analysis. Technical: DATE type, part of composite primary key with
+    locationKey.'
+  business_description: Date of weather forecast
+  technical_description: Forecast date (part of composite PK)
+- name: epochDate
+  type: BIGINT
+  nullable: true
+  description: 'Unix epoch timestamp. Business: Alternative date representation for
+    API integrations. Technical: Unix timestamp (seconds since 1970-01-01).'
+  business_description: Unix timestamp for date
+  technical_description: Epoch date in seconds
+- name: temperatureMin
+  type: DOUBLE
+  nullable: true
+  description: 'Minimum temperature. Business: Daily low temperature for weather
+    impact analysis. Technical: Numeric temperature value.'
+  business_description: Daily minimum temperature
+  technical_description: Min temperature from forecast
+- name: temperatureMax
+  type: DOUBLE
+  nullable: true
+  description: 'Maximum temperature. Business: Daily high temperature for weather
+    impact analysis. Technical: Numeric temperature value.'
+  business_description: Daily maximum temperature
+  technical_description: Max temperature from forecast
+- name: temperatureUnit
+  type: STRING
+  nullable: true
+  description: 'Temperature unit. Business: Unit of measurement for temperature (F
+    or C). Technical: String field from AccuWeather API.'
+  business_description: Temperature measurement unit
+  technical_description: Temperature unit (F/C)
+- name: realFeelMin
+  type: DOUBLE
+  nullable: true
+  description: 'Minimum ''feels like'' temperature. Business: Perceived temperature
+    including wind chill and humidity. Technical: Numeric temperature value.'
+  business_description: Minimum perceived temperature
+  technical_description: RealFeel min temperature
+- name: realFeelMax
+  type: DOUBLE
+  nullable: true
+  description: 'Maximum ''feels like'' temperature. Business: Perceived temperature
+    including heat index. Technical: Numeric temperature value.'
+  business_description: Maximum perceived temperature
+  technical_description: RealFeel max temperature
+- name: hoursOfSun
+  type: DOUBLE
+  nullable: true
+  description: 'Hours of sunshine. Business: Sunshine duration for outdoor activity
+    planning. Technical: Numeric hours value.'
+  business_description: Daily sunshine hours
+  technical_description: Hours of sun from forecast
+- name: precipitationProbability
+  type: INTEGER
+  nullable: true
+  description: 'Precipitation probability percentage. Business: Chance of rain/snow
+    for guest planning. Technical: Integer 0-100 representing percentage.'
+  business_description: Rain/snow probability
+  technical_description: Precipitation probability (0-100)
+- name: thunderstormProbability
+  type: INTEGER
+  nullable: true
+  description: 'Thunderstorm probability percentage. Business: Severe weather indicator
+    for safety. Technical: Integer 0-100 representing percentage.'
+  business_description: Thunderstorm chance
+  technical_description: Thunderstorm probability (0-100)
+- name: rainProbability
+  type: INTEGER
+  nullable: true
+  description: 'Rain probability percentage. Business: Rain-specific forecast for
+    outdoor activities. Technical: Integer 0-100 representing percentage.'
+  business_description: Rain probability
+  technical_description: Rain probability (0-100)
+- name: snowProbability
+  type: INTEGER
+  nullable: true
+  description: 'Snow probability percentage. Business: Snow forecast for winter destinations.
+    Technical: Integer 0-100 representing percentage.'
+  business_description: Snow probability
+  technical_description: Snow probability (0-100)
+- name: iceProbability
+  type: INTEGER
+  nullable: true
+  description: 'Ice probability percentage. Business: Ice conditions for safety warnings.
+    Technical: Integer 0-100 representing percentage.'
+  business_description: Ice probability
+  technical_description: Ice probability (0-100)
+- name: day_iconPhrase
+  type: STRING
+  nullable: true
+  description: 'Daytime weather description. Business: Human-readable daytime weather
+    summary. Technical: String field from AccuWeather API.'
+  business_description: Daytime weather summary
+  technical_description: Day icon phrase from API
+- name: day_hasPrecipitation
+  type: BOOLEAN
+  nullable: true
+  description: 'Daytime precipitation flag. Business: Indicates if precipitation
+    is expected during day. Technical: Boolean from AccuWeather API.'
+  business_description: Day precipitation indicator
+  technical_description: Boolean for daytime precipitation
+- name: night_iconPhrase
+  type: STRING
+  nullable: true
+  description: 'Nighttime weather description. Business: Human-readable nighttime
+    weather summary. Technical: String field from AccuWeather API.'
+  business_description: Nighttime weather summary
+  technical_description: Night icon phrase from API
+- name: night_hasPrecipitation
+  type: BOOLEAN
+  nullable: true
+  description: 'Nighttime precipitation flag. Business: Indicates if precipitation
+    is expected during night. Technical: Boolean from AccuWeather API.'
+  business_description: Night precipitation indicator
+  technical_description: Boolean for nighttime precipitation
+- name: temperature_range
+  type: DOUBLE
+  nullable: true
+  description: 'Temperature range (max - min). Business: Temperature variation for
+    packing recommendations. Technical: Calculated field: temperatureMax - temperatureMin.'
+  business_description: Daily temperature variation
+  technical_description: Calculated as temperatureMax - temperatureMin
+- name: is_precipitation_expected
+  type: BOOLEAN
+  nullable: true
+  description: 'Precipitation expected flag. Business: Quick indicator if guests
+    should prepare for rain. Technical: TRUE if precipitationProbability > 50, else
+    FALSE.'
+  business_description: High chance of precipitation indicator
+  technical_description: Boolean derived from precipitationProbability > 50
+- name: record_created_timestamp
+  type: TIMESTAMP
+  nullable: false
+  description: 'Record creation timestamp. Business: When the forecast was first
+    added to Gold layer. Technical: UTC timestamp, set on initial insert.'
+  business_description: Record creation time
+  technical_description: UTC timestamp of record creation
+- name: record_updated_timestamp
+  type: TIMESTAMP
+  nullable: false
+  description: 'Record last updated timestamp. Business: When the forecast was last
+    updated. Technical: UTC timestamp, updated on every MERGE operation.'
+  business_description: Last update time
+  technical_description: UTC timestamp of last update
+

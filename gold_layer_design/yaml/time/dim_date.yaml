@@ -1,0 +1,219 @@
+table_name: dim_date
+domain: time
+bronze_source: generated
+description: 'Gold layer date dimension with comprehensive calendar attributes for
+  time-based analysis and trending. Business: Standard date dimension for all time-based
+  analysis, trending, and reporting across fact tables. Supports fiscal year tracking,  holiday
+  analysis, seasonality studies, and day-of-week patterns. Enables consistent date-based
+  filtering, grouping, and time intelligence  calculations. Used by all stakeholders
+  for temporal reporting. Technical: Generated dimension populated for date range
+  covering historical data plus future dates for forecasting.  Not sourced from Silver
+  - created via SQL date sequence generation. Type 1 dimension (dates are immutable).
+
+  '
+grain: One row per calendar date
+scd_type: 1
+primary_key:
+  columns:
+  - date
+  composite: false
+foreign_keys: []
+columns:
+- name: date
+  type: DATE
+  nullable: false
+  description: 'Calendar date primary key. Business: The date value for all time-based
+    analysis. Used for joining fact tables to date dimension for temporal reporting.
+    Technical: DATE type, no surrogate key needed. Range typically 2020-01-01 to 2030-12-31
+    for historical data plus forecasting.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: SEQUENCE(start_date, end_date, INTERVAL 1 DAY)
+    notes: Primary key generated from date sequence
+- name: year
+  type: INT
+  nullable: false
+  description: 'Calendar year (4-digit format). Business: Year for annual analysis,
+    year-over-year comparisons, and fiscal year reporting. Examples: 2023, 2024, 2025.
+    Technical: YEAR(date), integer format YYYY.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: YEAR(date)
+- name: quarter
+  type: INT
+  nullable: false
+  description: 'Calendar quarter (1-4). Business: Quarter for quarterly reporting,
+    seasonality analysis, and QoQ comparisons. Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep,
+    Q4=Oct-Dec. Technical: QUARTER(date), integer 1-4.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: QUARTER(date)
+- name: month
+  type: INT
+  nullable: false
+  description: 'Calendar month (1-12). Business: Month for monthly trends, month-over-month
+    comparisons, and seasonal pattern analysis. 1=January through 12=December. Technical:
+    MONTH(date), integer 1-12.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: MONTH(date)
+- name: month_name
+  type: STRING
+  nullable: false
+  description: 'Full month name for user-friendly display. Business: User-friendly
+    month labels for reports and dashboards. Values: ''January'', ''February'', ...,
+    ''December''.  Improves report readability vs numeric month values. Technical:
+    DATE_FORMAT(date, ''MMMM''), full month name.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: DATE_FORMAT(date, 'MMMM')
+- name: week_of_year
+  type: INT
+  nullable: false
+  description: 'ISO week of year (1-53). Business: Week-level analysis for short-term
+    trends, weekly performance tracking, and operational reporting. Week 1 starts
+    with first Thursday of year. Technical: WEEKOFYEAR(date), ISO 8601 week numbering,
+    integer 1-53.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: WEEKOFYEAR(date)
+- name: day_of_week
+  type: INT
+  nullable: false
+  description: 'Day of week numeric value (1=Sunday, 7=Saturday). Business: Day-of-week
+    analysis for staffing patterns, pricing strategies, and demand forecasting. 1=Sunday
+    through 7=Saturday. Technical: DAYOFWEEK(date), integer 1-7 where 1=Sunday (US
+    convention).
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: DAYOFWEEK(date)
+- name: day_of_week_name
+  type: STRING
+  nullable: false
+  description: 'Full day of week name for user-friendly display. Business: User-friendly
+    day labels for reports showing weekly patterns. Values: ''Monday'', ''Tuesday'',
+    ..., ''Sunday''.  Used for day-of-week performance analysis. Technical: DATE_FORMAT(date,
+    ''EEEE''), full day name.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: DATE_FORMAT(date, 'EEEE')
+- name: day_of_month
+  type: INT
+  nullable: false
+  description: 'Day of month (1-31). Business: Day-of-month analysis for monthly booking
+    patterns, billing cycles, and period-end reporting. Technical: DAY(date), integer
+    1-31.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: DAY(date)
+- name: day_of_year
+  type: INT
+  nullable: false
+  description: 'Day of year (1-366). Business: Seasonal analysis, holiday distance
+    calculations, and annual trend comparisons. Useful for seasonality studies. Technical:
+    DAYOFYEAR(date), integer 1-366 (366 for leap years).
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: DAYOFYEAR(date)
+- name: is_weekend
+  type: BOOLEAN
+  nullable: false
+  description: 'Weekend indicator flag. Business: TRUE for Saturday and Sunday, FALSE
+    for weekdays. Used for weekend vs weekday demand analysis, pricing strategies,  and
+    operational staffing. Weekend patterns typically differ significantly from weekdays
+    in travel industry. Technical: day_of_week IN (1, 7), boolean TRUE/FALSE.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: CASE WHEN DAYOFWEEK(date) IN (1, 7) THEN true ELSE false
+      END
+- name: is_holiday
+  type: BOOLEAN
+  nullable: true
+  description: 'Holiday indicator flag (optional, can be populated from holiday calendar).
+    Business: TRUE for recognized holidays (national, regional, or platform-specific).
+    Used for holiday impact analysis,  special pricing, and demand forecasting. NULL
+    if holiday calendar not populated yet. Technical: Populated from holiday calendar
+    lookup table, boolean TRUE/FALSE/NULL. Can be updated annually.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: 'false'
+    notes: Default to false, can be updated from holiday calendar lookup
+table_properties:
+  contains_pii: false
+  data_classification: public
+  business_owner: Enterprise Data
+  technical_owner: Data Engineering
+  update_frequency: Static (extended annually)
+  retention_policy: Indefinite

@@ -1,0 +1,356 @@
+table_name: dim_property
+domain: property
+bronze_source: properties
+description: 'Gold layer property dimension with SCD Type 2 history tracking for listing
+  management and pricing strategy analysis. Business: Maintains complete property
+  lifecycle history including price changes, capacity updates, and listing modifications.  Each
+  property version tracked separately for point-in-time pricing analysis and revenue
+  optimization. Used for inventory management,  competitive pricing analysis, and
+  property performance tracking. Enables tracking of listing improvements, price elasticity
+  studies,  and market positioning over time. Technical: Slowly Changing Dimension
+  Type 2 implementation with effective dating. Surrogate keys enable proper fact table
+  joins  to historical property states for accurate historical revenue analysis. Updates
+  via Delta MERGE from Silver streaming tables.
+
+  '
+grain: One row per property_id per version (SCD Type 2)
+scd_type: 2
+primary_key:
+  columns:
+  - property_key
+  composite: false
+business_key:
+  columns:
+  - property_id
+foreign_keys:
+- columns:
+  - host_id
+  references: dim_host(host_id)
+  nullable: false
+- columns:
+  - destination_id
+  references: dim_destination(destination_id)
+  nullable: false
+columns:
+- name: property_key
+  type: STRING
+  nullable: false
+  description: 'Surrogate key uniquely identifying each version of a property record.
+    Business: Used for joining fact tables to dimension when historical property state
+    is needed for pricing analysis. Technical: MD5 hash generated from property_id
+    and effective_from timestamp to ensure uniqueness across SCD Type 2 versions.
+
+    '
+  lineage:
+    bronze_table: bronze_property_dim
+    bronze_column: property_id, processed_timestamp
+    silver_table: silver_property_dim
+    silver_column: property_id, processed_timestamp
+    transformation: HASH_MD5
+    transformation_logic: md5(concat_ws('||', col('property_id'), col('processed_timestamp')))
+    notes: Surrogate key for SCD Type 2, ensures uniqueness across versions
+- name: property_id
+  type: BIGINT
+  nullable: false
+  description: 'Business key identifying the unique property listing across all historical
+    versions. Business: The primary identifier used throughout the platform for bookings,
+    reviews, and property management. Technical: Natural key from source system, same
+    across all historical versions of this property.
+
+    '
+  lineage:
+    bronze_table: bronze_property_dim
+    bronze_column: property_id
+    silver_table: silver_property_dim
+    silver_column: property_id
+    transformation: DIRECT_COPY
+    transformation_logic: col('property_id')
+    notes: Business key, same across all versions
+- name: host_id
+  type: BIGINT
+  nullable: false
+  description: 'Host identifier linking property to its owner. Business: Links to
+    dim_host for host performance analysis, property ownership tracking, and multi-property
+    host identification. Technical: FK to dim_host.host_id (business key for query
+    simplicity). Required for all properties.
+
+    '
+  lineage:
+    bronze_table: bronze_property_dim
+    bronze_column: host_id
+    silver_table: silver_property_dim
+    silver_column: host_id
+    transformation: DIRECT_COPY
+    transformation_logic: col('host_id')
+- name: destination_id
+  type: BIGINT
+  nullable: false
+  description: 'Destination identifier linking property to its geographic location.
+    Business: Links to dim_destination for geographic market analysis, destination
+    popularity tracking, and regional inventory management. Technical: FK to dim_destination.destination_id.
+    Required for all properties.
+
+    '
+  lineage:
+    bronze_table: bronze_property_dim
+    bronze_column: destination_id
+    silver_table: silver_property_dim
+    silver_column: destination_id
+    transformation: DIRECT_COPY
+    transformation_logic: col('destination_id')
+- name: title
+  type: STRING
+  nullable: false
+  description: 'Property listing title displayed in search results and property pages.
+    Business: Marketing title crafted by host to attract bookings. Changes tracked
+    to measure impact of title optimization on conversion. Technical: Free-text field
+    from listing form, limited to 100 characters in source system.
+
+    '
+  lineage:
+    bronze_table: bronze_property_dim
+    bronze_column: title
+    silver_table: silver_property_dim
+    silver_column: title
+    transformation: DIRECT_COPY
+    transformation_logic: col('title')
+- name: description
+  type: STRING
+  nullable: true
+  description: 'Detailed property description with amenities, nearby attractions,
+    and house rules. Business: Full listing description used for SEO and guest decision-making.
+    Changes tracked to measure impact of description improvements. Technical: Long
+    text field, may contain markdown or HTML formatting from listing editor.
+
+    '
+  lineage:
+    bronze_table: bronze_property_dim
+    bronze_column: description
+    silver_table: silver_property_dim
+    silver_column: description
+    transformation: DIRECT_COPY
+    transformation_logic: col('description')
+- name: base_price
+  type: FLOAT
+  nullable: false
+  description: 'Base nightly price for the property in platform currency. Business:
+    Starting price before discounts, seasonal adjustments, or dynamic pricing. Changes
+    tracked over time for pricing strategy  analysis, revenue optimization, and competitive
+    positioning studies. Critical for revenue forecasting. Technical: Float precision
+    to handle decimal amounts, converted to platform currency (USD) in Silver layer.
+
+    '
+  lineage:
+    bronze_table: bronze_property_dim
+    bronze_column: base_price
+    silver_table: silver_property_dim
+    silver_column: base_price
+    transformation: DIRECT_COPY
+    transformation_logic: col('base_price')
+- name: property_type
+  type: STRING
+  nullable: false
+  description: 'Property classification type. Business: Category for inventory segmentation
+    and search filtering. Values include: ''house'', ''apartment'', ''condo'', ''villa'',
+    ''cabin''.  Changes tracked to understand property renovations or recategorizations.
+    Technical: Enumerated type validated in Silver layer, standardized from host selection.
+
+    '
+  lineage:
+    bronze_table: bronze_property_dim
+    bronze_column: property_type
+    silver_table: silver_property_dim
+    silver_column: property_type
+    transformation: DIRECT_COPY
+    transformation_logic: col('property_type')
+- name: max_guests
+  type: INT
+  nullable: false
+  description: 'Maximum number of guests allowed at the property. Business: Capacity
+    constraint for booking validation and guest count filtering. Changes tracked as
+    hosts expand or restrict capacity. Technical: Integer validated to be >= 1 in
+    Silver layer.
+
+    '
+  lineage:
+    bronze_table: bronze_property_dim
+    bronze_column: max_guests
+    silver_table: silver_property_dim
+    silver_column: max_guests
+    transformation: DIRECT_COPY
+    transformation_logic: col('max_guests')
+- name: bedrooms
+  type: INT
+  nullable: false
+  description: 'Number of bedrooms in the property. Business: Key search filter for
+    family travelers and group bookings. Changes tracked as properties are renovated
+    or reconfigured. Technical: Integer validated to be >= 0 (studios have 0 bedrooms).
+
+    '
+  lineage:
+    bronze_table: bronze_property_dim
+    bronze_column: bedrooms
+    silver_table: silver_property_dim
+    silver_column: bedrooms
+    transformation: DIRECT_COPY
+    transformation_logic: col('bedrooms')
+- name: bathrooms
+  type: INT
+  nullable: false
+  description: 'Number of bathrooms in the property. Business: Amenity metric for
+    property quality and guest comfort. Changes tracked for property improvement analysis.
+    Technical: Integer validated to be >= 1 in Silver layer.
+
+    '
+  lineage:
+    bronze_table: bronze_property_dim
+    bronze_column: bathrooms
+    silver_table: silver_property_dim
+    silver_column: bathrooms
+    transformation: DIRECT_COPY
+    transformation_logic: col('bathrooms')
+- name: property_latitude
+  type: FLOAT
+  nullable: true
+  description: 'Latitude coordinate of property location. Business: Precise location
+    for mapping, distance calculations, and geospatial analysis. NULL for hosts who
+    choose to hide exact location. Technical: Validated to be between -90 and 90 in
+    Silver layer. Precision to 6 decimal places (~0.1 meter accuracy).
+
+    '
+  lineage:
+    bronze_table: bronze_property_dim
+    bronze_column: latitude
+    silver_table: silver_property_dim
+    silver_column: latitude
+    transformation: DIRECT_COPY
+    transformation_logic: col('latitude')
+- name: property_longitude
+  type: FLOAT
+  nullable: true
+  description: 'Longitude coordinate of property location. Business: Precise location
+    for mapping, distance calculations, and geospatial analysis. NULL for hosts who
+    choose to hide exact location. Technical: Validated to be between -180 and 180
+    in Silver layer. Precision to 6 decimal places.
+
+    '
+  lineage:
+    bronze_table: bronze_property_dim
+    bronze_column: longitude
+    silver_table: silver_property_dim
+    silver_column: longitude
+    transformation: DIRECT_COPY
+    transformation_logic: col('longitude')
+- name: created_at
+  type: DATE
+  nullable: false
+  description: 'Date when property listing was first created on the platform. Business:
+    Listing creation date, used for property age analysis, new listing performance
+    tracking, and inventory growth metrics.  Never changes across SCD Type 2 versions.
+    Technical: Cast from original timestamp to date for dimension modeling, immutable
+    field.
+
+    '
+  lineage:
+    bronze_table: bronze_property_dim
+    bronze_column: created_at_timestamp
+    silver_table: silver_property_dim
+    silver_column: created_at_timestamp
+    transformation: CAST
+    transformation_logic: col('created_at_timestamp').cast('date')
+    notes: Cast from timestamp to date, immutable across versions
+- name: effective_from
+  type: TIMESTAMP
+  nullable: false
+  description: 'Start timestamp for this version of the property record. Business:
+    Indicates when this set of property attributes became active. Used for point-in-time
+    queries to understand  property state at specific dates (e.g., property price
+    at time of booking). Technical: SCD Type 2 field, populated from processed_timestamp
+    when new version created. Forms part of surrogate key.
+
+    '
+  lineage:
+    bronze_table: bronze_property_dim
+    bronze_column: processed_timestamp
+    silver_table: silver_property_dim
+    silver_column: processed_timestamp
+    transformation: DIRECT_COPY
+    transformation_logic: col('processed_timestamp')
+    notes: SCD Type 2 field, marks version start
+- name: effective_to
+  type: TIMESTAMP
+  nullable: true
+  description: 'End timestamp for this version of the property record. Business: NULL
+    indicates this is the current version. Non-NULL indicates historical record superseded
+    by newer version.  Use with WHERE effective_to IS NULL to get latest property
+    state. Technical: SCD Type 2 field, set to next version effective_from when superseded.
+    NULL for current version.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: lit(None).cast('timestamp')
+    notes: SCD Type 2 field, NULL for current version, set when superseded
+- name: is_current
+  type: BOOLEAN
+  nullable: false
+  description: 'Flag indicating if this is the current active version of the property
+    record. Business: TRUE for current property attributes, FALSE for historical records.  Use
+    with WHERE is_current = true to get latest listing state. Simplifies queries for
+    current inventory. Technical: SCD Type 2 flag, updated to FALSE when new version
+    created. Exactly one current version per property_id.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: lit(True)
+    notes: SCD Type 2 flag, TRUE for current version
+- name: record_created_timestamp
+  type: TIMESTAMP
+  nullable: false
+  description: 'Timestamp when this specific version was first inserted into the Gold
+    layer. Business: Audit field for data lineage, troubleshooting, and understanding
+    when property changes were captured. Technical: Set once at INSERT time during
+    MERGE operation, never updated.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: current_timestamp()
+    notes: Generated during Gold MERGE INSERT, never updated
+- name: record_updated_timestamp
+  type: TIMESTAMP
+  nullable: false
+  description: 'Timestamp when this version record was last modified in Gold layer.
+    Business: Shows data freshness for this version. Useful for validating price updates
+    were captured correctly. Technical: Updated on every MERGE operation that modifies
+    this version record.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: current_timestamp()
+    notes: Updated on every MERGE operation
+table_properties:
+  contains_pii: true
+  data_classification: confidential
+  business_owner: Property Operations
+  technical_owner: Data Engineering
+  update_frequency: Daily
+  retention_policy: 7_years

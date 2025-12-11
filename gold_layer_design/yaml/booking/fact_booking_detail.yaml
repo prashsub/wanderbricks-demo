@@ -1,0 +1,405 @@
+table_name: fact_booking_detail
+domain: booking
+bronze_source: bookings, payments, booking_updates
+description: 'Gold layer transaction-level booking fact table with complete booking
+  lifecycle and payment details. Business: Primary source for detailed booking analysis
+  including customer journey, payment tracking, host performance, and booking patterns.  Transaction
+  grain enables detailed cohort analysis, customer segmentation, and booking funnel
+  analysis. Each row represents a single booking  with full detail for operational
+  reporting and customer analytics. Used for revenue reconciliation, payment processing
+  tracking, and customer  behavior analysis. Supports detailed queries for customer
+  support, fraud detection, and business intelligence. Technical: Grain is one row
+  per booking_id (transaction level, not aggregated). Derived metrics pre-calculated
+  for query performance.  Foreign keys link to Type 2 dimensions using business keys
+  with is_current filter for simplicity. Updates via Delta MERGE from Silver  with
+  late-arriving payment data handling.
+
+  '
+grain: One row per booking_id (transaction level - individual booking)
+primary_key:
+  columns:
+  - booking_id
+  composite: false
+foreign_keys:
+- columns:
+  - user_id
+  references: dim_user(user_id)
+  nullable: false
+- columns:
+  - host_id
+  references: dim_host(host_id)
+  nullable: false
+- columns:
+  - property_id
+  references: dim_property(property_id)
+  nullable: false
+- columns:
+  - destination_id
+  references: dim_destination(destination_id)
+  nullable: false
+- columns:
+  - check_in_date
+  references: dim_date(date)
+  nullable: false
+columns:
+- name: booking_id
+  type: BIGINT
+  nullable: false
+  description: 'Unique booking transaction identifier. Business: Primary identifier
+    for each booking transaction. Used for booking lookups, payment reconciliation,
+    and customer service inquiries. Technical: Natural key from source booking system,
+    guaranteed unique. Primary key for fact table.
+
+    '
+  lineage:
+    bronze_table: bronze_booking_fact
+    bronze_column: booking_id
+    silver_table: silver_booking_fact
+    silver_column: booking_id
+    transformation: DIRECT_COPY
+    transformation_logic: col('booking_id')
+    notes: Primary key, natural key from source
+- name: user_id
+  type: BIGINT
+  nullable: false
+  description: 'User identifier linking to customer dimension. Business: Links to
+    dim_user for customer segmentation, lifetime value analysis, and user behavior
+    tracking.  Enables analysis of user booking patterns, preferences, and retention.
+    Technical: FK to dim_user.user_id (business key). Join with dim_user.is_current
+    = true for current user state,  or point-in-time join using effective_from/to
+    for historical user state at booking time.
+
+    '
+  lineage:
+    bronze_table: bronze_booking_fact
+    bronze_column: user_id
+    silver_table: silver_booking_fact
+    silver_column: user_id
+    transformation: DIRECT_COPY
+    transformation_logic: col('user_id')
+- name: host_id
+  type: BIGINT
+  nullable: false
+  description: 'Host identifier linking to property owner dimension. Business: Links
+    to dim_host for host performance analysis, quality tracking, and multi-property
+    host identification.  Enables host revenue analysis and host-level aggregations.
+    Technical: FK to dim_host.host_id (business key). Denormalized from property for
+    query simplicity.
+
+    '
+  lineage:
+    bronze_table: bronze_property_dim (joined)
+    bronze_column: host_id
+    silver_table: silver_booking_fact (joined from dim_property)
+    silver_column: host_id
+    transformation: LOOKUP
+    transformation_logic: Retrieved via join with dim_property on property_id
+    notes: Denormalized from property for query simplicity
+- name: property_id
+  type: BIGINT
+  nullable: false
+  description: 'Property identifier linking to listing dimension. Business: Links
+    to dim_property for property performance analysis, pricing strategies, and inventory
+    management.  Enables property-level revenue tracking and occupancy analysis. Technical:
+    FK to dim_property.property_id (business key). Join with dim_property.is_current
+    = true for current property state.
+
+    '
+  lineage:
+    bronze_table: bronze_booking_fact
+    bronze_column: property_id
+    silver_table: silver_booking_fact
+    silver_column: property_id
+    transformation: DIRECT_COPY
+    transformation_logic: col('property_id')
+- name: destination_id
+  type: BIGINT
+  nullable: false
+  description: 'Destination identifier linking to geographic market dimension. Business:
+    Links to dim_destination for geographic market analysis, destination popularity
+    tracking, and regional performance.  Enables grouping bookings by city, state,
+    and country. Technical: FK to dim_destination.destination_id. Denormalized from
+    property for query performance.
+
+    '
+  lineage:
+    bronze_table: bronze_property_dim (joined)
+    bronze_column: destination_id
+    silver_table: silver_booking_fact (joined from dim_property)
+    silver_column: destination_id
+    transformation: LOOKUP
+    transformation_logic: Retrieved via join with dim_property on property_id
+    notes: Denormalized from property for query performance
+- name: check_in_date
+  type: DATE
+  nullable: false
+  description: 'Booking check-in date linking to time dimension. Business: Links to
+    dim_date for time-based analysis, trending, and seasonality studies. Primary date
+    for booking aggregations  and occupancy calculations. Used for lead time analysis
+    when compared to created_at. Technical: FK to dim_date.date. DATE type (not timestamp)
+    for standard date dimension joins.
+
+    '
+  lineage:
+    bronze_table: bronze_booking_fact
+    bronze_column: check_in_timestamp
+    silver_table: silver_booking_fact
+    silver_column: check_in_timestamp
+    transformation: CAST
+    transformation_logic: col('check_in_timestamp').cast('date')
+- name: check_out_date
+  type: DATE
+  nullable: false
+  description: 'Booking check-out date for stay duration calculation. Business: End
+    date of guest stay. Used with check_in_date to calculate nights_booked and length
+    of stay metrics.  Must be after check_in_date. Technical: DATE type. Validated
+    in Silver layer: check_out_date > check_in_date.
+
+    '
+  lineage:
+    bronze_table: bronze_booking_fact
+    bronze_column: check_out_timestamp
+    silver_table: silver_booking_fact
+    silver_column: check_out_timestamp
+    transformation: CAST
+    transformation_logic: col('check_out_timestamp').cast('date')
+- name: guests_count
+  type: INT
+  nullable: false
+  description: 'Number of guests for this booking. Business: Guest count for occupancy
+    analysis, capacity planning, and guest count distribution analysis.  Must be within
+    property max_guests limit. Technical: Integer validated against dim_property.max_guests
+    in Silver layer. Typically 1-8.
+
+    '
+  lineage:
+    bronze_table: bronze_booking_fact
+    bronze_column: guests_count
+    silver_table: silver_booking_fact
+    silver_column: guests_count
+    transformation: DIRECT_COPY
+    transformation_logic: col('guests_count')
+- name: nights_booked
+  type: INT
+  nullable: false
+  description: 'Number of nights booked, calculated from check-in and check-out dates.
+    Business: Length of stay metric for average nights analysis, pricing calculations,
+    and booking pattern studies.  Longer stays often indicate leisure travel, shorter
+    stays indicate business travel. Technical: DATEDIFF(check_out_date, check_in_date),
+    pre-calculated in Gold for performance. Always >= 1.
+
+    '
+  lineage:
+    bronze_table: bronze_booking_fact
+    bronze_column: check_in_timestamp, check_out_timestamp
+    silver_table: silver_booking_fact
+    silver_column: check_in_timestamp, check_out_timestamp
+    transformation: DERIVED_CALCULATION
+    transformation_logic: datediff(col('check_out_timestamp').cast('date'), col('check_in_timestamp').cast('date'))
+    notes: Pre-calculated for performance
+- name: total_amount
+  type: DECIMAL(18,2)
+  nullable: false
+  description: 'Total booking amount charged to guest. Business: Total revenue for
+    this booking including base price, cleaning fees, service fees, and taxes.  Primary
+    revenue metric for financial reporting, commission calculations, and revenue analysis.
+    Technical: Sum of all charges from booking system, precision to 2 decimal places
+    for currency amounts.
+
+    '
+  lineage:
+    bronze_table: bronze_booking_fact
+    bronze_column: total_amount
+    silver_table: silver_booking_fact
+    silver_column: total_amount
+    transformation: DIRECT_COPY
+    transformation_logic: col('total_amount')
+- name: payment_amount
+  type: DECIMAL(18,2)
+  nullable: true
+  description: 'Actual payment amount received from guest. Business: Payment received
+    amount, may differ from total_amount due to refunds, partial payments, or payment
+    failures.  NULL if payment not yet processed. Used for revenue reconciliation
+    and payment success analysis. Technical: Sum of successful payments from payment
+    system, NULL for pending/failed bookings.
+
+    '
+  lineage:
+    bronze_table: bronze_payment_fact
+    bronze_column: payment_amount
+    silver_table: silver_booking_fact (joined from payment_fact)
+    silver_column: payment_amount
+    transformation: LOOKUP
+    transformation_logic: Retrieved via left join with payment_fact on booking_id
+    notes: NULL for pending/unpaid bookings
+- name: payment_method
+  type: STRING
+  nullable: true
+  description: 'Payment method used for booking payment. Business: Payment method
+    for payment method preference analysis, payment success rates, and payment processing
+    costs.  Values: ''credit_card'', ''paypal'', ''apple_pay'', ''google_pay'', ''bank_transfer''.
+    NULL if not yet paid. Technical: Standardized payment method from payment gateway,
+    NULL for unpaid bookings.
+
+    '
+  lineage:
+    bronze_table: bronze_payment_fact
+    bronze_column: payment_method
+    silver_table: silver_booking_fact (joined from payment_fact)
+    silver_column: payment_method
+    transformation: LOOKUP
+    transformation_logic: Retrieved via left join with payment_fact on booking_id
+    notes: NULL for pending/unpaid bookings
+- name: status
+  type: STRING
+  nullable: false
+  description: 'Current booking status for lifecycle tracking. Business: Booking status
+    for operational reporting, cancellation analysis, and booking funnel metrics.  Values:
+    ''pending'', ''confirmed'', ''cancelled'', ''completed''. Status changes tracked
+    via booking_updates in Silver. Technical: Current status from booking system,
+    validated enumeration in Silver layer.
+
+    '
+  lineage:
+    bronze_table: bronze_booking_fact
+    bronze_column: status
+    silver_table: silver_booking_fact
+    silver_column: status
+    transformation: DIRECT_COPY
+    transformation_logic: col('status')
+- name: created_at
+  type: TIMESTAMP
+  nullable: false
+  description: 'Timestamp when booking was created by user. Business: Booking creation
+    timestamp for lead time analysis (time between booking and check-in),  booking
+    velocity tracking, and booking creation patterns. Used for cohort analysis and
+    conversion funnel timing. Technical: Original timestamp from booking system, preserved
+    at transaction grain.
+
+    '
+  lineage:
+    bronze_table: bronze_booking_fact
+    bronze_column: created_at
+    silver_table: silver_booking_fact
+    silver_column: created_at
+    transformation: DIRECT_COPY
+    transformation_logic: col('created_at')
+- name: updated_at
+  type: TIMESTAMP
+  nullable: false
+  description: 'Timestamp when booking was last updated. Business: Last modification
+    timestamp for change tracking, cancellation timing, and booking update patterns.  Updated
+    when status changes or booking details modified. Technical: Latest timestamp from
+    booking_updates or booking system.
+
+    '
+  lineage:
+    bronze_table: bronze_booking_updates
+    bronze_column: updated_at
+    silver_table: silver_booking_fact
+    silver_column: updated_at
+    transformation: DIRECT_COPY
+    transformation_logic: col('updated_at')
+    notes: Latest timestamp from booking_updates
+- name: days_between_booking_and_checkin
+  type: INT
+  nullable: false
+  description: 'Lead time in days from booking creation to check-in date. Business:
+    Booking lead time metric for demand forecasting, pricing strategies, and booking
+    pattern analysis.  Longer lead times indicate planned trips, shorter lead times
+    indicate spontaneous bookings or last-minute demand. Technical: DATEDIFF(check_in_date,
+    DATE(created_at)), pre-calculated in Gold for performance. Can be negative for
+    same-day bookings.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: created_at, check_in_timestamp
+    silver_table: N/A
+    silver_column: N/A
+    transformation: DERIVED_CALCULATION
+    transformation_logic: datediff(col('check_in_timestamp').cast('date'), col('created_at').cast('date'))
+    depends_on:
+    - check_in_date
+    - created_at
+    notes: Lead time metric, can be negative for same-day bookings
+- name: is_cancelled
+  type: BOOLEAN
+  nullable: false
+  description: 'Boolean flag indicating if booking was cancelled. Business: TRUE for
+    cancelled bookings (status=''cancelled''), FALSE otherwise. Simplified flag for
+    cancellation rate calculations,  cancellation pattern analysis, and filtering
+    out cancelled bookings from revenue metrics. Technical: status = ''cancelled'',
+    boolean flag for query performance.
+
+    '
+  lineage:
+    bronze_table: bronze_booking_fact
+    bronze_column: status
+    silver_table: silver_booking_fact
+    silver_column: status
+    transformation: DERIVED_CONDITIONAL
+    transformation_logic: when(col('status') == 'cancelled', True).otherwise(False)
+    depends_on:
+    - status
+    notes: Boolean flag for cancellation filtering
+- name: is_business_booking
+  type: BOOLEAN
+  nullable: false
+  description: 'Boolean flag indicating if booking was made by business account. Business:
+    TRUE for business/corporate bookings, FALSE for individual leisure bookings. Used
+    for B2B vs B2C segmentation,  corporate account tracking, and business travel
+    pattern analysis. Technical: Derived from dim_user.is_business at time of booking,
+    denormalized for query performance.
+
+    '
+  lineage:
+    bronze_table: bronze_user_dim (joined)
+    bronze_column: user_type
+    silver_table: silver_booking_fact (joined from dim_user)
+    silver_column: is_business
+    transformation: LOOKUP
+    transformation_logic: Retrieved via join with dim_user on user_id where is_current
+      = true
+    notes: Denormalized from user dimension for query performance
+- name: record_created_timestamp
+  type: TIMESTAMP
+  nullable: false
+  description: 'Timestamp when booking record was first inserted into Gold layer.
+    Business: Audit field for data lineage, troubleshooting, and understanding data
+    pipeline latency. Technical: Set once at INSERT time during MERGE operation, never
+    updated.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: current_timestamp()
+    notes: Generated during Gold MERGE INSERT, never updated
+- name: record_updated_timestamp
+  type: TIMESTAMP
+  nullable: false
+  description: 'Timestamp when booking record was last modified in Gold layer. Business:
+    Shows data freshness, useful for validating payment updates and status changes
+    were captured. Technical: Updated on every MERGE operation that modifies the booking
+    record.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: current_timestamp()
+    notes: Updated on every MERGE operation
+table_properties:
+  contains_pii: true
+  data_classification: confidential
+  business_owner: Revenue Management
+  technical_owner: Data Engineering
+  update_frequency: Daily
+  aggregation_level: transaction

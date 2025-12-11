@@ -1,0 +1,102 @@
+# ML Batch Inference Job
+# Performs batch scoring for all ML models using Feature Store
+# Reference: https://docs.databricks.com/aws/en/mlflow/logged-model
+
+resources:
+  jobs:
+    ml_batch_inference_job:
+      name: "[${bundle.target}] ML Batch Inference"
+      description: "Batch scoring for Wanderbricks ML models - populates prediction tables"
+      
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - "mlflow>=3.1"
+              - "databricks-feature-engineering>=0.6.0"
+              - "xgboost==2.0.3"
+              - "scikit-learn==1.3.2"
+      
+      tasks:
+        # Demand Prediction
+        - task_key: score_demand_predictions
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_ml/inference/batch_inference_fixed.py
+            base_parameters:
+              catalog: ${var.catalog}
+              feature_schema: ${var.ml_schema}
+              model_name: demand_predictor
+              input_table: ${var.catalog}.${var.gold_schema}.fact_booking_daily
+              output_table: ${var.catalog}.${var.ml_schema}.demand_predictions
+              model_version: latest
+          timeout_seconds: 1800
+        
+        # Conversion Prediction
+        - task_key: score_conversion_predictions
+          depends_on:
+            - task_key: score_demand_predictions
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_ml/inference/batch_inference_fixed.py
+            base_parameters:
+              catalog: ${var.catalog}
+              feature_schema: ${var.ml_schema}
+              model_name: conversion_predictor
+              input_table: ${var.catalog}.${var.gold_schema}.fact_property_engagement
+              output_table: ${var.catalog}.${var.ml_schema}.conversion_predictions
+              model_version: latest
+          timeout_seconds: 1800
+        
+        # Pricing Recommendations
+        - task_key: score_pricing_recommendations
+          depends_on:
+            - task_key: score_conversion_predictions
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_ml/inference/batch_inference_fixed.py
+            base_parameters:
+              catalog: ${var.catalog}
+              feature_schema: ${var.ml_schema}
+              model_name: pricing_optimizer
+              input_table: ${var.catalog}.${var.gold_schema}.fact_booking_daily
+              output_table: ${var.catalog}.${var.ml_schema}.pricing_recommendations
+              model_version: latest
+          timeout_seconds: 1800
+        
+        # Customer LTV Predictions
+        - task_key: score_customer_ltv
+          depends_on:
+            - task_key: score_pricing_recommendations
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_ml/inference/batch_inference_fixed.py
+            base_parameters:
+              catalog: ${var.catalog}
+              feature_schema: ${var.ml_schema}
+              model_name: customer_ltv_predictor
+              input_table: ${var.catalog}.${var.gold_schema}.dim_user
+              output_table: ${var.catalog}.${var.ml_schema}.customer_ltv_predictions
+              model_version: latest
+          timeout_seconds: 1800
+      
+      # Schedule: Daily at 4 AM (after data refresh)
+      schedule:
+        quartz_cron_expression: "0 0 4 * * ?"
+        timezone_id: "America/Los_Angeles"
+        pause_status: PAUSED
+      
+      timeout_seconds: 7200  # 2 hours total
+      
+      email_notifications:
+        on_failure:
+          - data-engineering@company.com
+      
+      tags:
+        environment: ${bundle.target}
+        project: wanderbricks
+        layer: ml
+        compute_type: serverless
+        job_type: inference
+

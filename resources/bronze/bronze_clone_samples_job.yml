@@ -1,0 +1,35 @@
+# Bronze Layer - Clone Sample Data Job
+# Clones tables from samples.wanderbricks and samples.accuweather to Bronze schema
+
+resources:
+  jobs:
+    bronze_clone_samples_job:
+      name: "[${bundle.target}] Wanderbricks Bronze - Clone Samples"
+      description: "Clones sample data from samples.wanderbricks and samples.accuweather to Bronze layer"
+      
+      # Serverless environment configuration
+      environments:
+        - environment_key: "default"
+          spec:
+            environment_version: "4"
+      
+      tasks:
+        - task_key: clone_samples
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_bronze/clone_samples.py
+            base_parameters:
+              catalog: ${var.catalog}
+              bronze_schema: ${var.bronze_schema}
+      
+      email_notifications:
+        on_failure:
+          - data-engineering@company.com
+      
+      tags:
+        environment: ${bundle.target}
+        project: wanderbricks
+        layer: bronze
+        job_type: setup
+        compute_type: serverless
+

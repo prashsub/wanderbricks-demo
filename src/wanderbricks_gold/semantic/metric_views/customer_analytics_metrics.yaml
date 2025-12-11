@@ -1,0 +1,217 @@
+version: "1.1"
+comment: >
+  Customer behavior and segmentation analytics for vacation rental platform.
+  Optimized for Genie natural language queries and AI/BI dashboards.
+  Provides customer demographics, booking patterns, spending analysis, and segmentation
+  for marketing strategy, loyalty programs, and customer lifetime value optimization.
+
+source: ${catalog}.${gold_schema}.dim_user
+
+joins:
+  - name: fact_booking
+    source: ${catalog}.${gold_schema}.fact_booking_detail
+    'on': source.user_id = fact_booking.user_id
+
+dimensions:
+  - name: user_id
+    expr: source.user_id
+    comment: Unique customer identifier for user-level analysis and segmentation
+    display_name: User ID
+    synonyms:
+      - customer
+      - guest
+      - user
+      - customer id
+  
+  - name: country
+    expr: source.country
+    comment: Customer country location for geographic market analysis
+    display_name: Country
+    synonyms:
+      - customer country
+      - location
+      - nation
+  
+  - name: user_type
+    expr: source.user_type
+    comment: Customer type classification for segment-based analysis
+    display_name: User Type
+    synonyms:
+      - type
+      - account type
+      - customer type
+  
+  - name: is_business
+    expr: source.is_business
+    comment: Business customer indicator for B2B vs B2C segmentation
+    display_name: Business Customer
+    synonyms:
+      - business
+      - corporate
+      - b2b
+  
+  - name: created_at
+    expr: source.created_at
+    comment: Customer account creation date for cohort and lifecycle analysis
+    display_name: Created Date
+    synonyms:
+      - signup date
+      - join date
+      - registration date
+  
+  - name: customer_tenure_days
+    expr: DATEDIFF(CURRENT_DATE(), source.created_at)
+    comment: Number of days since customer joined for tenure and retention analysis
+    display_name: Customer Tenure Days
+    synonyms:
+      - tenure
+      - days active
+      - time on platform
+      - customer age
+  
+  - name: is_current
+    expr: source.is_current
+    comment: Current user record version indicator (SCD Type 2) - TRUE for active version
+    display_name: Current Version
+    synonyms:
+      - current
+      - active version
+      - latest
+
+measures:
+  - name: customer_count
+    expr: COUNT(DISTINCT source.user_id)
+    comment: >
+      Total number of unique customers. Customer base size metric showing
+      market penetration and growth potential.
+    display_name: Customer Count
+    format:
+      type: number
+      decimal_places:
+        type: all
+      abbreviation: compact
+    synonyms:
+      - customers
+      - users
+      - guests
+      - user count
+  
+  - name: business_count
+    expr: SUM(CASE WHEN source.is_business = true THEN 1 ELSE 0 END)
+    comment: >
+      Number of business customers. B2B segment size metric for corporate
+      sales strategy and enterprise growth tracking.
+    display_name: Business Customers
+    format:
+      type: number
+      decimal_places:
+        type: all
+      abbreviation: compact
+    synonyms:
+      - business
+      - corporate customers
+      - b2b customers
+  
+  - name: booking_count
+    expr: COUNT(fact_booking.booking_id)
+    comment: >
+      Total number of bookings made by customers. Volume metric showing
+      overall platform usage and customer engagement levels.
+    display_name: Booking Count
+    format:
+      type: number
+      decimal_places:
+        type: all
+      abbreviation: compact
+    synonyms:
+      - bookings
+      - reservations
+      - orders
+      - customer bookings
+  
+  - name: total_spend
+    expr: SUM(fact_booking.total_amount)
+    comment: >
+      Total amount spent by customers. Revenue metric showing customer
+      lifetime value and spending patterns for marketing ROI analysis.
+    display_name: Total Spend
+    format:
+      type: currency
+      currency_code: USD
+      decimal_places:
+        type: exact
+        places: 2
+      abbreviation: compact
+    synonyms:
+      - customer spend
+      - revenue
+      - total revenue
+      - spending
+  
+  - name: avg_booking_value
+    expr: AVG(fact_booking.total_amount)
+    comment: >
+      Average booking value per customer transaction. Spending behavior metric
+      showing typical purchase size for pricing and promotion strategy.
+    display_name: Avg Booking Value
+    format:
+      type: currency
+      currency_code: USD
+      decimal_places:
+        type: exact
+        places: 2
+    synonyms:
+      - average spend
+      - typical booking
+      - average order value
+  
+  - name: bookings_per_customer
+    expr: COUNT(fact_booking.booking_id) / NULLIF(COUNT(DISTINCT source.user_id), 0)
+    comment: >
+      Average bookings per customer. Frequency metric showing customer
+      loyalty and repeat purchase behavior for retention strategy.
+    display_name: Bookings per Customer
+    format:
+      type: number
+      decimal_places:
+        type: exact
+        places: 1
+    synonyms:
+      - booking frequency
+      - frequency
+      - repeat rate
+      - avg bookings
+  
+  - name: spend_per_customer
+    expr: SUM(fact_booking.total_amount) / NULLIF(COUNT(DISTINCT source.user_id), 0)
+    comment: >
+      Average total spend per customer. Customer lifetime value indicator
+      showing typical customer worth for acquisition cost benchmarking.
+    display_name: Spend per Customer
+    format:
+      type: currency
+      currency_code: USD
+      decimal_places:
+        type: exact
+        places: 2
+    synonyms:
+      - customer ltv
+      - lifetime value
+      - avg customer value
+  
+  - name: business_rate
+    expr: (SUM(CASE WHEN source.is_business = true THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT source.user_id), 0)) * 100
+    comment: >
+      Percentage of customers that are business accounts. Segment distribution
+      metric for understanding B2B vs B2C mix and market strategy.
+    display_name: Business Rate
+    format:
+      type: percentage
+      decimal_places:
+        type: exact
+        places: 1
+    synonyms:
+      - business percentage
+      - b2b rate
+      - corporate rate
+

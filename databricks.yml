@@ -1,0 +1,75 @@
+# Databricks Asset Bundle Configuration
+# Wanderbricks - Vacation Rental Platform Data Pipeline
+
+bundle:
+  name: wanderbricks
+  
+variables:
+  catalog:
+    description: Unity Catalog name
+    default: prashanth_subrahmanyam_catalog
+  
+  bronze_schema:
+    description: Schema name for Bronze layer (raw data ingestion)
+    default: wanderbricks
+  
+  silver_schema:
+    description: Schema name for Silver layer (used by DQ setup and DLT config)
+    default: wanderbricks_silver
+  
+  silver_tables_schema:
+    description: Actual schema where DLT creates Silver tables (includes dev prefix in dev mode)
+    default: wanderbricks_silver
+  
+  gold_schema:
+    description: Schema name for Gold layer (business-ready aggregates)
+    default: wanderbricks_gold
+  
+  ml_schema:
+    description: Schema name for ML feature tables and model registry
+    default: wanderbricks_ml
+  
+  warehouse_id:
+    description: SQL Warehouse ID for serverless execution
+    default: "03560442e95cb440"  # Serverless SQL warehouse
+
+targets:
+  dev:
+    mode: development
+    default: true
+    variables:
+      catalog: prashanth_subrahmanyam_catalog
+      bronze_schema: dev_prashanth_subrahmanyam_wanderbricks_bronze
+      silver_schema: wanderbricks_silver
+      # DLT adds dev_username_ prefix in dev mode
+      silver_tables_schema: dev_prashanth_subrahmanyam_wanderbricks_silver
+      gold_schema: dev_prashanth_subrahmanyam_wanderbricks_gold
+      ml_schema: dev_prashanth_subrahmanyam_wanderbricks_ml
+      
+  prod:
+    mode: production
+    variables:
+      catalog: prashanth_subrahmanyam_catalog
+      bronze_schema: wanderbricks
+      silver_schema: wanderbricks_silver
+      silver_tables_schema: wanderbricks_silver  # Same in prod (no DLT prefix)
+      gold_schema: wanderbricks_gold
+      ml_schema: wanderbricks_ml
+
+# Sync YAML schema files to Databricks workspace
+sync:
+  include:
+    - src/**/*.py
+    - src/**/*.sql  # Include TVF SQL files
+    - sql/**/*.sql
+    - gold_layer_design/yaml/**/*.yaml  # ← CRITICAL: Gold layer YAML schemas
+    - src/wanderbricks_gold/semantic/metric_views/**/*.yaml  # ← Metric view definitions
+
+# Include all resource definitions from resources/ folder
+include:
+  - resources/*.yml
+  - resources/bronze/*.yml
+  - resources/silver/*.yml
+  - resources/gold/*.yml
+  - resources/ml/*.yml
+

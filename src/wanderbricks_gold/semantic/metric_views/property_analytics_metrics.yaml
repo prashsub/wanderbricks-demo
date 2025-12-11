@@ -1,0 +1,248 @@
+version: "1.1"
+comment: >
+  Property portfolio and performance analytics for vacation rental platform.
+  Optimized for Genie natural language queries and AI/BI dashboards.
+  Provides property inventory metrics, pricing analysis, capacity utilization,
+  and host performance for portfolio management and investment decisions.
+
+source: ${catalog}.${gold_schema}.dim_property
+
+joins:
+  - name: dim_destination
+    source: ${catalog}.${gold_schema}.dim_destination
+    'on': source.destination_id = dim_destination.destination_id
+  
+  - name: dim_host
+    source: ${catalog}.${gold_schema}.dim_host
+    'on': source.host_id = dim_host.host_id AND dim_host.is_current = true
+  
+  - name: fact_booking
+    source: ${catalog}.${gold_schema}.fact_booking_daily
+    'on': source.property_id = fact_booking.property_id
+
+dimensions:
+  - name: property_id
+    expr: source.property_id
+    comment: Unique property identifier for property-level analysis
+    display_name: Property ID
+    synonyms:
+      - property
+      - listing
+      - property number
+  
+  - name: property_title
+    expr: source.title
+    comment: Property listing title for user-friendly identification
+    display_name: Property Title
+    synonyms:
+      - property name
+      - listing name
+      - title
+  
+  - name: property_type
+    expr: source.property_type
+    comment: Type of property (house, apartment, villa) for category analysis
+    display_name: Property Type
+    synonyms:
+      - type
+      - category
+      - accommodation type
+  
+  - name: base_price
+    expr: source.base_price
+    comment: Base nightly rate for pricing strategy and market positioning analysis
+    display_name: Base Price
+    synonyms:
+      - price
+      - nightly rate
+      - rate
+      - listing price
+  
+  - name: bedrooms
+    expr: source.bedrooms
+    comment: Number of bedrooms for property size and capacity analysis
+    display_name: Bedrooms
+    synonyms:
+      - beds
+      - rooms
+      - bedroom count
+  
+  - name: max_guests
+    expr: source.max_guests
+    comment: Maximum guest capacity for occupancy planning and inventory analysis
+    display_name: Max Guests
+    synonyms:
+      - capacity
+      - guests allowed
+      - maximum capacity
+  
+  - name: destination
+    expr: dim_destination.destination
+    comment: Destination city or location for geographic portfolio analysis
+    display_name: Destination
+    synonyms:
+      - city
+      - location
+      - market
+  
+  - name: country
+    expr: dim_destination.country
+    comment: Country of the destination for international portfolio tracking
+    display_name: Country
+    synonyms:
+      - nation
+      - destination country
+  
+  - name: host_name
+    expr: dim_host.name
+    comment: Host name for host-level property portfolio analysis
+    display_name: Host Name
+    synonyms:
+      - host
+      - owner
+      - host owner
+  
+  - name: is_verified_host
+    expr: dim_host.is_verified
+    comment: Host verification status for quality and trust analysis
+    display_name: Verified Host
+    synonyms:
+      - verified
+      - host verified
+      - verification status
+
+measures:
+  - name: property_count
+    expr: COUNT(DISTINCT source.property_id)
+    comment: >
+      Total number of unique properties. Inventory size metric showing portfolio
+      breadth and market coverage for capacity planning.
+    display_name: Property Count
+    format:
+      type: number
+      decimal_places:
+        type: all
+      abbreviation: compact
+    synonyms:
+      - properties
+      - listings
+      - inventory
+      - property inventory
+  
+  - name: avg_base_price
+    expr: AVG(source.base_price)
+    comment: >
+      Average base nightly rate across properties. Pricing benchmark for market
+      positioning and competitive analysis.
+    display_name: Avg Base Price
+    format:
+      type: currency
+      currency_code: USD
+      decimal_places:
+        type: exact
+        places: 2
+    synonyms:
+      - average price
+      - average rate
+      - typical price
+  
+  - name: total_capacity
+    expr: SUM(source.max_guests)
+    comment: >
+      Total guest capacity across all properties. Maximum occupancy metric for
+      understanding portfolio scale and market opportunity.
+    display_name: Total Capacity
+    format:
+      type: number
+      decimal_places:
+        type: all
+      abbreviation: compact
+    synonyms:
+      - capacity
+      - total guests
+      - maximum capacity
+  
+  - name: avg_bedrooms
+    expr: AVG(source.bedrooms)
+    comment: >
+      Average number of bedrooms per property. Property size metric for
+      understanding portfolio composition and target customer segments.
+    display_name: Avg Bedrooms
+    format:
+      type: number
+      decimal_places:
+        type: exact
+        places: 1
+    synonyms:
+      - average bedrooms
+      - average rooms
+      - typical size
+  
+  - name: total_revenue
+    expr: SUM(fact_booking.total_booking_value)
+    comment: >
+      Total revenue generated across properties. Primary financial metric for
+      portfolio performance and investment returns analysis.
+    display_name: Total Revenue
+    format:
+      type: currency
+      currency_code: USD
+      decimal_places:
+        type: exact
+        places: 2
+      abbreviation: compact
+    synonyms:
+      - revenue
+      - earnings
+      - income
+      - property revenue
+  
+  - name: booking_count
+    expr: SUM(fact_booking.booking_count)
+    comment: >
+      Total number of bookings across properties. Volume metric showing
+      property utilization and demand patterns.
+    display_name: Booking Count
+    format:
+      type: number
+      decimal_places:
+        type: all
+      abbreviation: compact
+    synonyms:
+      - bookings
+      - reservations
+      - booking volume
+  
+  - name: revenue_per_property
+    expr: SUM(fact_booking.total_booking_value) / NULLIF(COUNT(DISTINCT source.property_id), 0)
+    comment: >
+      Average revenue per property. Efficiency metric showing typical property
+      performance for portfolio optimization decisions.
+    display_name: Revenue per Property
+    format:
+      type: currency
+      currency_code: USD
+      decimal_places:
+        type: exact
+        places: 2
+    synonyms:
+      - avg revenue
+      - average earnings
+      - property performance
+  
+  - name: bookings_per_property
+    expr: SUM(fact_booking.booking_count) / NULLIF(COUNT(DISTINCT source.property_id), 0)
+    comment: >
+      Average bookings per property. Utilization metric showing typical demand
+      levels and helping identify underperforming properties.
+    display_name: Bookings per Property
+    format:
+      type: number
+      decimal_places:
+        type: exact
+        places: 1
+    synonyms:
+      - avg bookings
+      - average utilization
+      - booking rate
+

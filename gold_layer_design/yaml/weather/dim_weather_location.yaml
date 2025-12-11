@@ -1,0 +1,138 @@
+table_name: dim_weather_location
+domain: weather
+bronze_source: locations
+silver_source: silver_locations
+description: 'Gold layer weather location dimension with geographic and timezone details.
+  Business: Contains AccuWeather location data (cities/weather stations) for linking
+  weather forecasts to destinations. Used for weather-based property recommendations
+  and analyzing weather impact on bookings. Each location represents a weather station
+  or city with complete geographic details. Technical: Slowly Changing Dimension
+  Type 1 (updates in place). Simple surrogate key based on locationKey. Updates via
+  Delta MERGE from Silver streaming tables.'
+
+grain: One row per locationKey (current version only)
+scd_type: 1
+primary_key:
+  columns:
+  - location_key
+  composite: false
+business_key:
+  columns:
+  - locationKey
+foreign_keys: []
+columns:
+- name: location_key
+  type: STRING
+  nullable: false
+  description: 'Surrogate key for weather location. Business: Used for joining fact
+    tables to dimension. Technical: SHA256 hash of locationKey for consistent key
+    generation.'
+  business_description: Unique identifier for weather location records
+  technical_description: SHA256 hash surrogate key derived from locationKey
+- name: locationKey
+  type: STRING
+  nullable: false
+  description: 'AccuWeather location key (business key). Business: The primary identifier
+    from AccuWeather API. Technical: Natural key from source system, used to generate
+    surrogate key.'
+  business_description: AccuWeather location identifier
+  technical_description: Natural key from AccuWeather API
+- name: localizedName
+  type: STRING
+  nullable: true
+  description: 'Localized name of the location. Business: Display name for the weather
+    location in local language. Technical: String field from AccuWeather API.'
+  business_description: Display name of weather location
+  technical_description: Localized location name from API
+- name: englishName
+  type: STRING
+  nullable: true
+  description: 'English name of the location. Business: Standardized English name
+    for reporting. Technical: String field from AccuWeather API.'
+  business_description: English name for standardized reporting
+  technical_description: English location name from API
+- name: country_code
+  type: STRING
+  nullable: true
+  description: 'ISO country code. Business: Country classification for regional analysis.
+    Technical: Two-letter ISO country code.'
+  business_description: Country code for geographic segmentation
+  technical_description: ISO 3166-1 alpha-2 country code
+- name: country_name
+  type: STRING
+  nullable: true
+  description: 'Country name. Business: Human-readable country name for reporting.
+    Technical: String field from AccuWeather API.'
+  business_description: Country name for reports
+  technical_description: Full country name from API
+- name: administrativeArea_id
+  type: STRING
+  nullable: true
+  description: 'Administrative area identifier. Business: State/province/region identifier.
+    Technical: String field from AccuWeather API.'
+  business_description: State/province identifier
+  technical_description: Administrative area ID from API
+- name: administrativeArea_name
+  type: STRING
+  nullable: true
+  description: 'Administrative area name. Business: State/province/region name for
+    geographic filtering. Technical: String field from AccuWeather API.'
+  business_description: State/province name
+  technical_description: Administrative area name from API
+- name: timezone_code
+  type: STRING
+  nullable: true
+  description: 'Timezone code. Business: Timezone for converting forecast times to
+    local. Technical: IANA timezone identifier.'
+  business_description: Timezone for time conversion
+  technical_description: IANA timezone code (e.g., America/New_York)
+- name: timezone_name
+  type: STRING
+  nullable: true
+  description: 'Timezone display name. Business: Human-readable timezone name. Technical:
+    String field from AccuWeather API.'
+  business_description: Timezone display name
+  technical_description: Timezone name from API
+- name: gmt_offset
+  type: DOUBLE
+  nullable: true
+  description: 'GMT offset in hours. Business: Offset from GMT for time calculations.
+    Technical: Numeric field representing hours offset from GMT.'
+  business_description: Hours offset from GMT
+  technical_description: GMT offset for time conversion
+- name: latitude
+  type: DOUBLE
+  nullable: true
+  description: 'Latitude coordinate. Business: Geographic position for mapping and
+    distance calculations. Technical: Decimal degrees, -90 to 90.'
+  business_description: Latitude for mapping
+  technical_description: Latitude in decimal degrees
+- name: longitude
+  type: DOUBLE
+  nullable: true
+  description: 'Longitude coordinate. Business: Geographic position for mapping and
+    distance calculations. Technical: Decimal degrees, -180 to 180.'
+  business_description: Longitude for mapping
+  technical_description: Longitude in decimal degrees
+- name: elevation_metric_value
+  type: DOUBLE
+  nullable: true
+  description: 'Elevation in meters. Business: Elevation for weather pattern analysis.
+    Technical: Meters above sea level.'
+  business_description: Elevation in meters
+  technical_description: Elevation above sea level (meters)
+- name: record_created_timestamp
+  type: TIMESTAMP
+  nullable: false
+  description: 'Record creation timestamp. Business: When the record was first created
+    in Gold layer. Technical: UTC timestamp, set on initial insert.'
+  business_description: Record creation time
+  technical_description: UTC timestamp of record creation
+- name: record_updated_timestamp
+  type: TIMESTAMP
+  nullable: false
+  description: 'Record last updated timestamp. Business: When the record was last
+    modified. Technical: UTC timestamp, updated on every MERGE operation.'
+  business_description: Last update time
+  technical_description: UTC timestamp of last update
+

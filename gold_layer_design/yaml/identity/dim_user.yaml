@@ -1,0 +1,270 @@
+table_name: dim_user
+domain: identity
+bronze_source: users
+description: 'Gold layer user dimension with SCD Type 2 history tracking for customer
+  segmentation and behavior analysis. Business: Maintains complete user lifecycle
+  history including country changes, business status updates, and account evolution.  Each
+  user version tracked separately for point-in-time customer analysis. Used for market
+  segmentation, user journey analysis,  and retention studies. Enables tracking of
+  individual vs business account transitions and geographic market expansion. Technical:
+  Slowly Changing Dimension Type 2 implementation with effective dating. Surrogate
+  keys enable proper fact table  joins to historical user states. Updates via Delta
+  MERGE from Silver streaming tables. Contains PII requiring access controls.
+
+  '
+grain: One row per user_id per version (SCD Type 2)
+scd_type: 2
+primary_key:
+  columns:
+  - user_key
+  composite: false
+business_key:
+  columns:
+  - user_id
+foreign_keys: []
+columns:
+- name: user_key
+  type: STRING
+  nullable: false
+  description: 'Surrogate key uniquely identifying each version of a user record.
+    Business: Used for joining fact tables to dimension when historical user state
+    is needed. Technical: MD5 hash generated from user_id and effective_from timestamp
+    to ensure uniqueness across SCD Type 2 versions.
+
+    '
+  lineage:
+    bronze_table: bronze_user_dim
+    bronze_column: user_id, processed_timestamp
+    silver_table: silver_user_dim
+    silver_column: user_id, processed_timestamp
+    transformation: HASH_MD5
+    transformation_logic: md5(concat_ws('||', col('user_id'), col('processed_timestamp')))
+    notes: Surrogate key for SCD Type 2, ensures uniqueness across versions
+- name: user_id
+  type: BIGINT
+  nullable: false
+  description: 'Business key identifying the unique user account across all historical
+    versions. Business: The primary identifier used throughout the platform for user
+    interactions and bookings. Technical: Natural key from source system, same across
+    all historical versions of this user.
+
+    '
+  lineage:
+    bronze_table: bronze_user_dim
+    bronze_column: user_id
+    silver_table: silver_user_dim
+    silver_column: user_id
+    transformation: DIRECT_COPY
+    transformation_logic: col('user_id')
+    notes: Business key, same across all versions
+- name: email
+  type: STRING
+  nullable: false
+  description: 'User email address for account login and communications. Business:
+    Primary contact method, used for booking confirmations, marketing, and customer
+    support. Unique per user. Technical: PII field requiring encryption in transit
+    and access controls. Validated format in Silver layer.
+
+    '
+  lineage:
+    bronze_table: bronze_user_dim
+    bronze_column: email
+    silver_table: silver_user_dim
+    silver_column: email
+    transformation: DIRECT_COPY
+    transformation_logic: col('email')
+- name: name
+  type: STRING
+  nullable: false
+  description: 'User full name as provided during registration. Business: Used for
+    booking confirmations, review attribution, and customer service interactions.
+    Technical: PII field. Free-text field from registration form, may contain special
+    characters.
+
+    '
+  lineage:
+    bronze_table: bronze_user_dim
+    bronze_column: name
+    silver_table: silver_user_dim
+    silver_column: name
+    transformation: DIRECT_COPY
+    transformation_logic: col('name')
+- name: country
+  type: STRING
+  nullable: false
+  description: 'Country of user residence for market segmentation. Business: Used
+    for geographic market analysis, currency localization, and regional marketing
+    campaigns.  Changes tracked over time to understand user migration patterns. Technical:
+    Standardized country name from address validation, links to dim_destination.country
+    for geography analysis.
+
+    '
+  lineage:
+    bronze_table: bronze_user_dim
+    bronze_column: country
+    silver_table: silver_user_dim
+    silver_column: country
+    transformation: DIRECT_COPY
+    transformation_logic: col('country')
+- name: user_type
+  type: STRING
+  nullable: false
+  description: 'User account type classification. Business: Distinguishes between
+    individual travelers and business accounts for segmentation and pricing strategies.  Values:
+    ''individual'', ''business''. Technical: Enumerated type validated in Silver layer,
+    drives is_business flag calculation.
+
+    '
+  lineage:
+    bronze_table: bronze_user_dim
+    bronze_column: user_type
+    silver_table: silver_user_dim
+    silver_column: user_type
+    transformation: DIRECT_COPY
+    transformation_logic: col('user_type')
+- name: is_business
+  type: BOOLEAN
+  nullable: false
+  description: 'Boolean flag indicating business account status. Business: TRUE for
+    corporate travel accounts, FALSE for individual travelers. Used for B2B vs B2C
+    reporting,  bulk booking eligibility, and corporate account management. Technical:
+    Derived from user_type = ''business'', simplified boolean for fact table analysis.
+
+    '
+  lineage:
+    bronze_table: bronze_user_dim
+    bronze_column: user_type
+    silver_table: silver_user_dim
+    silver_column: user_type
+    transformation: DERIVED_CONDITIONAL
+    transformation_logic: when(col('user_type') == 'business', True).otherwise(False)
+    notes: Derived boolean flag from user_type enumeration
+- name: company_name
+  type: STRING
+  nullable: true
+  description: 'Company name for business accounts. Business: NULL for individual
+    users. Populated for business accounts to enable corporate client tracking and
+    account management.  Used for enterprise reporting and relationship management.
+    Technical: Optional field, only populated when is_business = true.
+
+    '
+  lineage:
+    bronze_table: bronze_user_dim
+    bronze_column: company_name
+    silver_table: silver_user_dim
+    silver_column: company_name
+    transformation: DIRECT_COPY
+    transformation_logic: col('company_name')
+- name: created_at
+  type: DATE
+  nullable: false
+  description: 'Date when user account was originally created. Business: Account registration
+    date, used for cohort analysis, user lifetime value calculations, and retention
+    studies.  Enables calculation of time since signup metrics. Technical: Cast from
+    original timestamp to date for dimension modeling, never changes across SCD Type
+    2 versions.
+
+    '
+  lineage:
+    bronze_table: bronze_user_dim
+    bronze_column: created_at_timestamp
+    silver_table: silver_user_dim
+    silver_column: created_at_timestamp
+    transformation: CAST
+    transformation_logic: col('created_at_timestamp').cast('date')
+    notes: Cast from timestamp to date, immutable across versions
+- name: effective_from
+  type: TIMESTAMP
+  nullable: false
+  description: 'Start timestamp for this version of the user record. Business: Indicates
+    when this set of user attributes became active. Used for point-in-time queries
+    to understand  user state at specific dates (e.g., user country at time of booking).
+    Technical: SCD Type 2 field, populated from processed_timestamp when new version
+    created. Forms part of surrogate key.
+
+    '
+  lineage:
+    bronze_table: bronze_user_dim
+    bronze_column: processed_timestamp
+    silver_table: silver_user_dim
+    silver_column: processed_timestamp
+    transformation: DIRECT_COPY
+    transformation_logic: col('processed_timestamp')
+    notes: SCD Type 2 field, marks version start
+- name: effective_to
+  type: TIMESTAMP
+  nullable: true
+  description: 'End timestamp for this version of the user record. Business: NULL
+    indicates this is the current version. Non-NULL indicates historical record superseded
+    by newer version.  Use with WHERE effective_to IS NULL to get latest user state.
+    Technical: SCD Type 2 field, set to next version effective_from when superseded.
+    NULL for current version.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: lit(None).cast('timestamp')
+    notes: SCD Type 2 field, NULL for current version, set when superseded
+- name: is_current
+  type: BOOLEAN
+  nullable: false
+  description: 'Flag indicating if this is the current active version of the user
+    record. Business: TRUE for current user attributes, FALSE for historical records.  Use
+    with WHERE is_current = true to get latest state. Simplifies queries vs effective_to
+    IS NULL. Technical: SCD Type 2 flag, updated to FALSE when new version created.
+    Exactly one current version per user_id.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: lit(True)
+    notes: SCD Type 2 flag, TRUE for current version
+- name: record_created_timestamp
+  type: TIMESTAMP
+  nullable: false
+  description: 'Timestamp when this specific version was first inserted into the Gold
+    layer. Business: Audit field for data lineage, troubleshooting, and understanding
+    when user changes were captured. Technical: Set once at INSERT time during MERGE
+    operation, never updated.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: current_timestamp()
+    notes: Generated during Gold MERGE INSERT, never updated
+- name: record_updated_timestamp
+  type: TIMESTAMP
+  nullable: false
+  description: 'Timestamp when this version record was last modified in Gold layer.
+    Business: Shows data freshness for this version. Should match effective_to when
+    version is superseded. Technical: Updated on every MERGE operation that modifies
+    this version record.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: current_timestamp()
+    notes: Updated on every MERGE operation
+table_properties:
+  contains_pii: true
+  data_classification: confidential
+  business_owner: Customer Success
+  technical_owner: Data Engineering
+  update_frequency: Daily
+  retention_policy: 7_years

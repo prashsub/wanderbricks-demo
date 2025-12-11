@@ -1,0 +1,497 @@
+# Project Plan Methodology for Databricks Solutions
+
+## Pattern Recognition
+
+This rule documents the comprehensive methodology for creating multi-phase project plans for Databricks data platform solutions. The patterns were discovered and refined during the Databricks Health Monitor project planning process.
+
+---
+
+## When to Apply This Rule
+
+Apply this methodology when:
+- Creating architectural plans for Databricks data platform projects
+- Designing solutions that span Bronze → Silver → Gold medallion architecture
+- Building observability/monitoring solutions using system tables
+- Planning multi-artifact solutions (TVFs, Metric Views, Dashboards, etc.)
+- Developing agent-based frameworks for platform management
+
+---
+
+## Plan Structure Framework
+
+### Standard Project Phases
+
+```
+plans/
+├── README.md                              # Index and overview
+├── phase1-bronze-ingestion.md             # Data ingestion layer
+├── phase2-gold-layer-design.md            # Dimensional model layer
+├── phase3-use-cases.md                    # Analytics artifacts (master)
+│   ├── phase3-addendum-3.1-ml-models.md   # Machine Learning
+│   ├── phase3-addendum-3.2-tvfs.md        # Table-Valued Functions
+│   ├── phase3-addendum-3.3-metric-views.md # UC Metric Views
+│   ├── phase3-addendum-3.4-lakehouse-monitoring.md # Monitoring
+│   ├── phase3-addendum-3.5-ai-bi-dashboards.md # Dashboards
+│   ├── phase3-addendum-3.6-genie-spaces.md # Natural Language
+│   └── phase3-addendum-3.7-alerting-framework.md # Alerting
+├── phase4-agent-framework.md              # AI Agents
+└── phase5-frontend-app.md                 # User Interface
+```
+
+### Phase Dependencies
+
+```
+Phase 1 (Bronze) → Phase 2 (Gold) → Phase 3 (Use Cases) → Phase 4 (Agents) → Phase 5 (Frontend)
+                                          ↓
+                                    All Addendums
+```
+
+---
+
+## Agent Domain Framework
+
+### Core Principle
+
+**ALL artifacts across ALL phases MUST be organized by Agent Domain.** This ensures:
+- Consistent categorization across 100+ artifacts
+- Clear ownership by future AI agents
+- Easy discoverability for users
+- Aligned tooling for each domain
+
+### Standard Agent Domains
+
+| Domain | Icon | Focus Area | Key Gold Tables |
+|--------|------|------------|-----------------|
+| **Cost** | 💰 | FinOps, budgets, chargeback | `fact_usage`, `dim_sku`, `commit_configurations` |
+| **Security** | 🔒 | Access audit, compliance | `fact_audit_events`, `fact_table_lineage` |
+| **Performance** | ⚡ | Query optimization, capacity | `fact_query_history`, `fact_node_timeline` |
+| **Reliability** | 🔄 | Job health, SLAs | `fact_job_run_timeline`, `dim_job` |
+| **Quality** | ✅ | Data quality, governance | `fact_data_quality_monitoring_table_results` |
+
+### Agent Domain Application
+
+Every artifact (TVF, Metric View, Dashboard, Alert, ML Model, Monitor, Genie Space) must:
+1. Be tagged with its Agent Domain
+2. Use the domain's Gold tables
+3. Answer domain-specific questions
+4. Be grouped with related domain artifacts in documentation
+
+**Example Pattern:**
+
+```markdown
+## 💰 Cost Agent: get_top_cost_contributors
+
+**Agent Domain:** 💰 Cost
+**Gold Tables:** `fact_usage`, `dim_workspace`
+**Business Questions:** "What are the top cost drivers?"
+```
+
+---
+
+## Plan Document Template
+
+### Standard Structure for Each Phase
+
+```markdown
+# Phase N: [Phase Name]
+
+## Overview
+
+**Status:** 📋 Planned | 🔧 In Progress | ✅ Complete  
+**Dependencies:** [List dependencies]  
+**Estimated Effort:** [Duration]  
+**Reference:** [Official docs or cursor rules]
+
+---
+
+## Purpose
+
+[2-3 sentences explaining why this phase exists]
+
+---
+
+## [Domain-Specific Sections]
+
+### 💰 Cost Agent: [Artifact Name]
+
+[Artifact details organized by agent domain]
+
+### 🔒 Security Agent: [Artifact Name]
+
+[Continue for all domains]
+
+---
+
+## Implementation Details
+
+[Code examples, SQL, YAML configurations]
+
+---
+
+## Success Criteria
+
+| Criteria | Target |
+|----------|--------|
+| [Metric] | [Value] |
+
+---
+
+## References
+
+- [Official Docs]
+- [Cursor Rules]
+```
+
+---
+
+## Enrichment Methodology
+
+### Source Categories for Enrichment
+
+When enriching plans, gather information from these sources (in priority order):
+
+1. **Official Documentation** (highest priority)
+   - Databricks docs (docs.databricks.com)
+   - Microsoft Learn MCP tool
+   - Context7 MCP for library docs
+
+2. **Reference Dashboards**
+   - Extract SQL query patterns from `.lvdash.json` files
+   - Identify visualization types and KPIs
+   - Note filtering and slicing patterns
+
+3. **Community Resources**
+   - Blog posts (data engineering blogs)
+   - GitHub repositories (dbdemos, etc.)
+   - Sample solutions
+
+4. **User Requirements**
+   - Specific use cases provided by user
+   - Business-specific terminology
+   - Custom tag keys and values
+
+### Dashboard Pattern Extraction Process
+
+When provided with dashboard JSON files:
+
+1. **Read the JSON file** to extract:
+   - Dataset queries (SQL)
+   - Visualization configurations
+   - Filter parameters
+   - Dashboard title and purpose
+
+2. **Categorize patterns by Agent Domain**
+
+3. **Convert queries to Gold layer references**
+   ```sql
+   -- FROM dashboard (system tables)
+   FROM system.billing.usage
+   
+   -- TO plan (Gold layer)
+   FROM ${catalog}.${gold_schema}.fact_usage
+   ```
+
+4. **Document the pattern** with:
+   - Source dashboard name
+   - Business question answered
+   - Visualization type
+   - Agent domain classification
+
+### Enrichment Workflow
+
+```
+1. Receive reference materials (blogs, repos, dashboards)
+                    ↓
+2. Extract patterns and queries
+                    ↓
+3. Categorize by Agent Domain
+                    ↓
+4. Convert to Gold layer references
+                    ↓
+5. Add to appropriate addendum
+                    ↓
+6. Update summary tables and cross-references
+```
+
+---
+
+## User Requirement Integration
+
+### Process for Adding User-Specific Use Cases
+
+When users provide specific requirements:
+
+1. **Understand the Business Need**
+   - What question are they trying to answer?
+   - What decisions will this inform?
+   - Who is the end user?
+
+2. **Identify Required Artifacts**
+   - Configuration tables (if user-configurable)
+   - TVFs (for parameterized queries)
+   - Metric Views (for self-service analytics)
+   - Dashboards (for visualization)
+   - Alerts (for proactive monitoring)
+   - ML Models (for predictions/forecasting)
+
+3. **Update ALL Relevant Addendums**
+   - A single use case often spans multiple addendums
+   - Ensure consistency across artifacts
+   - Update summary tables
+
+4. **Add Cross-References**
+   - Link related artifacts
+   - Document dependencies
+   - Update main phase3-use-cases.md
+
+### Example: Commit Tracking Use Case
+
+**User Requirement:** "Track actual spend vs Databricks commit amount with forecast"
+
+**Artifacts Created:**
+
+| Addendum | Artifact | Purpose |
+|----------|----------|---------|
+| Gold Schema | `commit_configurations` table | Store commit amounts |
+| 3.2 TVFs | `get_commit_vs_actual` | Query commit status |
+| 3.2 TVFs | `get_commit_forecast` | Query ML forecast |
+| 3.3 Metric Views | `commit_tracking_metrics` | Self-service analytics |
+| 3.5 Dashboards | Commit Tracking Dashboard | Visualization |
+| 3.7 Alerts | COST-009/010/011 | Proactive monitoring |
+| 3.1 ML Models | Budget Forecaster enhancement | Prediction capability |
+| 3.4 Monitoring | Budget variance metrics | Drift detection |
+
+---
+
+## SQL Query Standards
+
+### Gold Layer Reference Pattern
+
+**ALWAYS use Gold layer tables, NEVER system tables directly.**
+
+```sql
+-- ❌ WRONG: Direct system table reference
+FROM system.billing.usage
+
+-- ✅ CORRECT: Gold layer reference with variables
+FROM ${catalog}.${gold_schema}.fact_usage
+```
+
+### Standard Variable References
+
+```sql
+-- Catalog and schema (from parameters)
+${catalog}.${gold_schema}.table_name
+
+-- Date parameters (STRING type for Genie compatibility)
+WHERE usage_date BETWEEN CAST(start_date AS DATE) AND CAST(end_date AS DATE)
+
+-- SCD Type 2 dimension joins
+LEFT JOIN dim_workspace w 
+    ON f.workspace_id = w.workspace_id 
+    AND w.is_current = TRUE
+```
+
+### Tag Query Patterns
+
+For systems with custom tags (e.g., billing):
+
+```sql
+-- Tag existence check
+WHERE custom_tags IS NOT NULL AND cardinality(custom_tags) > 0
+
+-- Tag value extraction
+custom_tags['team'] AS team_tag
+COALESCE(custom_tags['cost_center'], 'Unassigned') AS cost_center
+
+-- Tag coverage calculation
+SUM(CASE WHEN cardinality(custom_tags) > 0 THEN cost ELSE 0 END) / 
+    NULLIF(SUM(cost), 0) * 100 AS tag_coverage_pct
+```
+
+---
+
+## Artifact Count Standards
+
+### Minimum Artifacts Per Domain
+
+| Artifact Type | Per Domain | Total (5 domains) |
+|---------------|------------|-------------------|
+| TVFs | 4-8 | 20-40 |
+| Metric Views | 1-2 | 5-10 |
+| Dashboard Pages | 2-4 | 10-20 |
+| Alerts | 4-8 | 20-40 |
+| ML Models | 3-5 | 15-25 |
+| Lakehouse Monitors | 1-2 | 5-10 |
+| Genie Spaces | 1-2 | 5-10 |
+
+### Artifact Naming Conventions
+
+| Artifact | Pattern | Example |
+|----------|---------|---------|
+| TVF | `get_<domain>_<metric>` | `get_cost_by_tag` |
+| Metric View | `<domain>_analytics_metrics` | `cost_analytics_metrics` |
+| Dashboard | `<Domain> <Purpose> Dashboard` | `Cost Attribution Dashboard` |
+| Alert | `<DOMAIN>-NNN` | `COST-001` |
+| ML Model | `<Purpose> <Type>` | `Budget Forecaster` |
+| Monitor | `<table> Monitor` | `Cost Data Quality Monitor` |
+| Genie Space | `<Domain> <Purpose>` | `Cost Intelligence` |
+
+---
+
+## Documentation Quality Standards
+
+### LLM-Friendly Comments
+
+All artifacts must have comments that help LLMs (Genie, AI/BI) understand:
+- What the artifact does
+- When to use it
+- Example questions it answers
+
+```sql
+COMMENT 'LLM: Returns top N cost contributors by workspace and SKU for a date range.
+Use this for cost optimization, chargeback analysis, and identifying spending hotspots.
+Parameters: start_date, end_date (YYYY-MM-DD format), optional top_n (default 10).
+Example questions: "What are the top 10 cost drivers?" or "Which workspace spent most?"'
+```
+
+### Summary Tables
+
+Every addendum must include:
+1. **Overview table** - All artifacts with agent domain, dependencies, status
+2. **By-domain sections** - Artifacts grouped by agent domain
+3. **Count summary** - Total artifacts by type and domain
+4. **Success criteria** - Measurable targets
+
+---
+
+## Plan Maintenance
+
+### When to Update Plans
+
+1. **New use case identified** - Add to relevant addendums
+2. **Reference material provided** - Enrich with patterns
+3. **Implementation starts** - Update status to "In Progress"
+4. **Implementation completes** - Update status to "Complete"
+5. **Requirements change** - Update affected artifacts
+
+### Version Control
+
+- Plans are documentation, not code
+- Track major changes in commit messages
+- Reference issues/PRs when available
+
+---
+
+## Validation Checklist
+
+Before finalizing any plan document:
+
+### Structure
+- [ ] Follows standard template
+- [ ] Has Overview with Status, Dependencies, Effort
+- [ ] Organized by Agent Domain
+- [ ] Includes code examples
+- [ ] Has Success Criteria table
+- [ ] Has References section
+
+### Content Quality
+- [ ] All queries use Gold layer tables (not system tables)
+- [ ] All artifacts tagged with Agent Domain
+- [ ] LLM-friendly comments on all artifacts
+- [ ] Examples use `${catalog}.${gold_schema}` variables
+- [ ] Summary tables are accurate and complete
+
+### Cross-References
+- [ ] Main phase document links to addendums
+- [ ] Addendums link back to main phase
+- [ ] Related artifacts cross-reference each other
+- [ ] Dependencies are documented
+
+### Completeness
+- [ ] All 5 agent domains covered
+- [ ] Minimum artifact counts met
+- [ ] User requirements addressed
+- [ ] Reference patterns incorporated
+
+---
+
+## Common Mistakes to Avoid
+
+### ❌ DON'T: Mix system tables and Gold tables
+
+```sql
+-- BAD: Direct system table
+FROM system.billing.usage u
+JOIN ${catalog}.${gold_schema}.dim_workspace w ...
+```
+
+### ❌ DON'T: Forget Agent Domain classification
+
+```markdown
+## get_slow_queries (BAD - no domain)
+
+## ⚡ Performance Agent: get_slow_queries (GOOD)
+```
+
+### ❌ DON'T: Create artifacts without cross-addendum updates
+
+When adding a TVF, also consider:
+- Does it need a Metric View counterpart?
+- Should there be an Alert?
+- Is it Dashboard-worthy?
+
+### ❌ DON'T: Use DATE parameters in TVFs (Genie incompatible)
+
+```sql
+-- BAD
+start_date DATE
+
+-- GOOD
+start_date STRING COMMENT 'Format: YYYY-MM-DD'
+```
+
+---
+
+## References
+
+### Official Documentation
+- [Databricks System Tables](https://docs.databricks.com/administration-guide/system-tables/)
+- [Databricks SQL Alerts](https://docs.databricks.com/sql/user/alerts/)
+- [Lakehouse Monitoring](https://docs.databricks.com/lakehouse-monitoring/)
+- [Metric Views](https://docs.databricks.com/metric-views/)
+- [Table-Valued Functions](https://docs.databricks.com/sql/language-manual/sql-ref-syntax-ddl-create-sql-function.html)
+
+### Related Cursor Rules
+- [15-databricks-table-valued-functions.mdc](mdc:.cursor/rules/15-databricks-table-valued-functions.mdc)
+- [14-metric-views-patterns.mdc](mdc:.cursor/rules/14-metric-views-patterns.mdc)
+- [17-lakehouse-monitoring-comprehensive.mdc](mdc:.cursor/rules/17-lakehouse-monitoring-comprehensive.mdc)
+- [18-databricks-aibi-dashboards.mdc](mdc:.cursor/rules/18-databricks-aibi-dashboards.mdc)
+- [16-genie-space-patterns.mdc](mdc:.cursor/rules/16-genie-space-patterns.mdc)
+
+### Project Examples
+- [plans/README.md](../plans/README.md) - Index of all plans
+- [plans/phase3-use-cases.md](../plans/phase3-use-cases.md) - Master Phase 3 document
+- [plans/phase3-addendum-3.7-alerting-framework.md](../plans/phase3-addendum-3.7-alerting-framework.md) - Complete alerting example
+
+---
+
+## Rule Improvement History
+
+**Created:** December 2025  
+**Trigger:** Comprehensive plan creation for Databricks Health Monitor project  
+**Patterns Documented:** 
+- 5-phase project structure
+- Agent domain framework (5 domains)
+- 7 Phase 3 addendums
+- 100+ artifacts planned
+- Dashboard pattern extraction methodology
+- User requirement integration process
+
+**Key Learnings:**
+1. Agent Domain framework provides consistent organization across all artifacts
+2. Gold layer references (not system tables) ensure consistency
+3. User requirements often span multiple addendums - update all
+4. Dashboard JSON files are rich sources of SQL patterns
+5. LLM-friendly comments are critical for Genie/AI/BI integration
+6. Summary tables help maintain accuracy across large plans

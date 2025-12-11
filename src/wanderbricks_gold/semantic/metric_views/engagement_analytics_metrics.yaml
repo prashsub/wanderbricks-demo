@@ -1,0 +1,198 @@
+version: "1.1"
+comment: >
+  Property engagement and conversion analytics for vacation rental platform.
+  Optimized for Genie natural language queries and AI/BI dashboards.
+  Provides view counts, click metrics, conversion rates, and user engagement patterns
+  for marketing optimization, content strategy, and funnel analysis.
+
+source: ${catalog}.${gold_schema}.fact_property_engagement
+
+joins:
+  - name: dim_property
+    source: ${catalog}.${gold_schema}.dim_property
+    'on': source.property_id = dim_property.property_id AND dim_property.is_current = true
+  
+  - name: dim_date
+    source: ${catalog}.${gold_schema}.dim_date
+    'on': source.engagement_date = dim_date.date
+
+dimensions:
+  - name: engagement_date
+    expr: source.engagement_date
+    comment: Date of engagement activity for time-based analysis and trending
+    display_name: Engagement Date
+    synonyms:
+      - date
+      - activity date
+      - interaction date
+  
+  - name: property_id
+    expr: source.property_id
+    comment: Property identifier linking engagement metrics to listings
+    display_name: Property ID
+    synonyms:
+      - property
+      - listing
+      - property number
+  
+  - name: property_title
+    expr: dim_property.title
+    comment: Property listing title for user-friendly property identification
+    display_name: Property Title
+    synonyms:
+      - property name
+      - listing name
+      - listing title
+  
+  - name: property_type
+    expr: dim_property.property_type
+    comment: Type of property for category-based engagement analysis
+    display_name: Property Type
+    synonyms:
+      - type
+      - listing type
+      - accommodation type
+  
+  - name: destination_id
+    expr: dim_property.destination_id
+    comment: Destination identifier for geographic market segmentation
+    display_name: Destination ID
+    synonyms:
+      - destination
+      - location id
+      - market id
+  
+  - name: month_name
+    expr: dim_date.month_name
+    comment: Month name for seasonal engagement pattern analysis
+    display_name: Month
+    synonyms:
+      - month
+      - calendar month
+  
+  - name: year
+    expr: dim_date.year
+    comment: Calendar year for annual engagement analysis
+    display_name: Year
+    synonyms:
+      - calendar year
+
+measures:
+  - name: total_views
+    expr: SUM(source.view_count)
+    comment: >
+      Total property view count. Primary traffic metric showing property impressions
+      and visibility. Used for content performance and marketing effectiveness analysis.
+    display_name: Total Views
+    format:
+      type: number
+      decimal_places:
+        type: all
+      hide_group_separator: false
+      abbreviation: compact
+    synonyms:
+      - views
+      - impressions
+      - page views
+      - property views
+  
+  - name: unique_viewers
+    expr: SUM(source.unique_user_views)
+    comment: >
+      Number of unique users viewing properties. Shows reach and audience size
+      excluding repeat views. Used for understanding true audience engagement.
+    display_name: Unique Viewers
+    format:
+      type: number
+      decimal_places:
+        type: all
+      abbreviation: compact
+    synonyms:
+      - unique views
+      - visitors
+      - unique users
+      - distinct viewers
+  
+  - name: total_clicks
+    expr: SUM(source.click_count)
+    comment: >
+      Total click count on property listings. Interaction metric showing user
+      engagement and intent. Used for click-through rate analysis.
+    display_name: Total Clicks
+    format:
+      type: number
+      decimal_places:
+        type: all
+      abbreviation: compact
+    synonyms:
+      - clicks
+      - interactions
+      - click count
+  
+  - name: search_appearances
+    expr: SUM(source.search_count)
+    comment: >
+      Number of times property appeared in search results. Visibility metric
+      for understanding discoverability and search ranking effectiveness.
+    display_name: Search Appearances
+    format:
+      type: number
+      decimal_places:
+        type: all
+      abbreviation: compact
+    synonyms:
+      - search results
+      - search impressions
+      - search visibility
+      - search count
+  
+  - name: avg_conversion_rate
+    expr: AVG(source.conversion_rate)
+    comment: >
+      Average conversion rate across properties. Key performance indicator
+      for listing effectiveness and conversion funnel optimization. Pre-calculated in fact table.
+    display_name: Avg Conversion Rate
+    format:
+      type: percentage
+      decimal_places:
+        type: exact
+        places: 2
+    synonyms:
+      - conversion rate
+      - convert rate
+      - conversion percentage
+      - booking rate
+  
+  - name: click_through_rate
+    expr: (SUM(source.click_count) / NULLIF(SUM(source.view_count), 0)) * 100
+    comment: >
+      Percentage of views that result in clicks. Engagement metric showing
+      how compelling property listings are to potential customers.
+    display_name: Click-Through Rate
+    format:
+      type: percentage
+      decimal_places:
+        type: exact
+        places: 2
+    synonyms:
+      - ctr
+      - click rate
+      - engagement rate
+  
+  - name: avg_time_on_page
+    expr: AVG(source.avg_time_on_page)
+    comment: >
+      Average time spent viewing property listings in seconds. Engagement quality
+      metric showing depth of user interest and content effectiveness.
+    display_name: Avg Time on Page
+    format:
+      type: number
+      decimal_places:
+        type: exact
+        places: 1
+    synonyms:
+      - time spent
+      - engagement time
+      - dwell time
+      - average time
+

@@ -1,0 +1,112 @@
+# ML Training Orchestrator Job
+# Trains all working ML models in sequence with MLflow 3.1+ LoggedModel tracking
+# Reference: https://docs.databricks.com/aws/en/mlflow/logged-model
+# Note: Revenue Forecaster (Prophet) excluded until dependencies are resolved
+
+resources:
+  jobs:
+    ml_training_orchestrator_job:
+      name: "[${bundle.target}] ML Training Orchestrator"
+      description: "Orchestrates training of all Wanderbricks ML models with MLflow 3.1+ LoggedModel tracking"
+      
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - "mlflow>=3.1"
+              - "databricks-feature-engineering>=0.6.0"
+              - "xgboost==2.0.3"
+              - "scikit-learn==1.3.2"
+              - "pandas==2.1.4"
+              - "numpy==1.26.2"
+      
+      tasks:
+        # All tasks run in PARALLEL for faster training
+        # No dependencies - each model trains independently
+        # Experiments are auto-created at /Shared/wanderbricks_ml/{model_name}
+        # Artifacts stored in UC volume: dbfs:/Volumes/{catalog}/{ml_schema}/ml_artifacts/{model_name}
+        
+        # Step 1: Train Demand Predictor (Seasonal/Regional)
+        - task_key: train_demand_predictor
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_ml/models/demand_predictor/train.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.gold_schema}
+              feature_schema: ${var.ml_schema}
+              model_name: demand_predictor
+          timeout_seconds: 3600
+        
+        # Step 2: Train Conversion Predictor (Independent - no depends_on)
+        - task_key: train_conversion_predictor
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_ml/models/conversion_predictor/train.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.gold_schema}
+              feature_schema: ${var.ml_schema}
+              model_name: conversion_predictor
+          timeout_seconds: 3600
+        
+        # Step 3: Train Pricing Optimizer (Independent - no depends_on)
+        - task_key: train_pricing_optimizer
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_ml/models/pricing_optimizer/train.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.gold_schema}
+              feature_schema: ${var.ml_schema}
+              model_name: pricing_optimizer
+          timeout_seconds: 3600
+        
+        # Step 4: Train Customer LTV Predictor (Independent - no depends_on)
+        - task_key: train_customer_ltv
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_ml/models/customer_ltv/train.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.gold_schema}
+              feature_schema: ${var.ml_schema}
+              model_name: customer_ltv_predictor
+          timeout_seconds: 3600
+        
+        # Step 5: Train Customer Segmentation (Depends on LTV for segment assignment)
+        - task_key: train_customer_segmentation
+          depends_on:
+            - task_key: train_customer_ltv  # Uses LTV predictions for segment rules
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_ml/models/customer_segmentation/train.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.gold_schema}
+              feature_schema: ${var.ml_schema}
+              model_name: customer_segmentation
+          timeout_seconds: 3600
+      
+      # Schedule: Weekly retraining on Sunday at 2 AM
+      schedule:
+        quartz_cron_expression: "0 0 2 ? * SUN"
+        timezone_id: "America/Los_Angeles"
+        pause_status: PAUSED  # Enable manually in production
+      
+      timeout_seconds: 14400  # 4 hours total
+      
+      email_notifications:
+        on_failure:
+          - data-engineering@company.com
+        on_success:
+          - data-engineering@company.com
+      
+      tags:
+        environment: ${bundle.target}
+        project: wanderbricks
+        layer: ml
+        compute_type: serverless
+        job_type: training
+        orchestrator: "true"

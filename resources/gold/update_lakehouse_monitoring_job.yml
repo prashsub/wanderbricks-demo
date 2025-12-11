@@ -1,0 +1,60 @@
+# Wanderbricks Lakehouse Monitoring Update Job
+# 
+# Updates existing Lakehouse Monitors with new custom metrics or configuration changes.
+# Does NOT delete existing monitors - preserves historical data.
+# 
+# Use Cases:
+# - Add new custom metrics
+# - Update metric definitions
+# - Change slicing expressions
+# - Modify time series granularity
+# 
+# Monitors Updated:
+# 1. Revenue Monitor (fact_booking_daily) - 6 custom metrics
+# 2. Engagement Monitor (fact_property_engagement) - 4 custom metrics
+# 3. Property Monitor (dim_property) - 3 custom metrics
+# 4. Host Monitor (dim_host) - 5 custom metrics
+# 5. Customer Monitor (dim_user) - 4 custom metrics
+# 
+# IMPORTANT: Use this job after monitors are created via lakehouse_monitoring_job.
+
+resources:
+  jobs:
+    update_lakehouse_monitoring_job:
+      name: "[${bundle.target}] Wanderbricks Lakehouse Monitoring Update"
+      description: "Updates existing Lakehouse Monitors with new custom metrics (no deletion)"
+      
+      # Serverless environment
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - "databricks-sdk>=0.18.0"
+      
+      tasks:
+        - task_key: update_lakehouse_monitoring
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_gold/update_lakehouse_monitoring.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.gold_schema}
+      
+      # Timeout: 30 minutes
+      timeout_seconds: 1800
+      
+      # Email notifications
+      email_notifications:
+        on_failure:
+          - prashanth.subrahmanyam@databricks.com
+        on_success:
+          - prashanth.subrahmanyam@databricks.com
+      
+      tags:
+        environment: ${bundle.target}
+        project: wanderbricks
+        layer: gold
+        job_type: monitoring_update
+        compute_type: serverless
+

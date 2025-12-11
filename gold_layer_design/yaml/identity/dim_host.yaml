@@ -1,0 +1,289 @@
+table_name: dim_host
+domain: identity
+bronze_source: hosts
+description: 'Gold layer host dimension with SCD Type 2 history tracking for property
+  owner management and quality monitoring. Business: Maintains complete host lifecycle
+  history including verification status changes, rating evolution, and active status
+  updates.  Each host version tracked separately for point-in-time quality analysis.
+  Used for host performance monitoring, trust & safety metrics,  and marketplace health
+  reporting. Enables tracking of host quality trends and verification effectiveness
+  over time. Technical: Slowly Changing Dimension Type 2 implementation with effective
+  dating. Surrogate keys enable proper fact table joins  to historical host states.
+  Updates via Delta MERGE from Silver streaming tables. Contains PII requiring access
+  controls.
+
+  '
+grain: One row per host_id per version (SCD Type 2)
+scd_type: 2
+primary_key:
+  columns:
+  - host_key
+  composite: false
+business_key:
+  columns:
+  - host_id
+foreign_keys: []
+columns:
+- name: host_key
+  type: STRING
+  nullable: false
+  description: 'Surrogate key uniquely identifying each version of a host record.
+    Business: Used for joining fact tables to dimension when historical host state
+    is needed for performance analysis. Technical: MD5 hash generated from host_id
+    and effective_from timestamp to ensure uniqueness across SCD Type 2 versions.
+
+    '
+  lineage:
+    bronze_table: bronze_host_dim
+    bronze_column: host_id, processed_timestamp
+    silver_table: silver_host_dim
+    silver_column: host_id, processed_timestamp
+    transformation: HASH_MD5
+    transformation_logic: md5(concat_ws('||', col('host_id'), col('processed_timestamp')))
+    notes: Surrogate key for SCD Type 2, ensures uniqueness across versions
+- name: host_id
+  type: BIGINT
+  nullable: false
+  description: 'Business key identifying the unique host account across all historical
+    versions. Business: The primary identifier used throughout the platform for property
+    ownership and host management. Technical: Natural key from source system, same
+    across all historical versions of this host.
+
+    '
+  lineage:
+    bronze_table: bronze_host_dim
+    bronze_column: host_id
+    silver_table: silver_host_dim
+    silver_column: host_id
+    transformation: DIRECT_COPY
+    transformation_logic: col('host_id')
+    notes: Business key, same across all versions
+- name: name
+  type: STRING
+  nullable: false
+  description: 'Host full name as registered on the platform. Business: Used for property
+    listings, host profile pages, and customer communications. Displayed publicly
+    on property pages. Technical: PII field. Free-text field from registration, may
+    contain special characters or business names.
+
+    '
+  lineage:
+    bronze_table: bronze_host_dim
+    bronze_column: name
+    silver_table: silver_host_dim
+    silver_column: name
+    transformation: DIRECT_COPY
+    transformation_logic: col('name')
+- name: email
+  type: STRING
+  nullable: false
+  description: 'Host email address for account communications and booking notifications.
+    Business: Primary contact method for booking confirmations, payout notifications,
+    and platform communications. Unique per host. Technical: PII field requiring encryption
+    in transit and access controls. Validated format in Silver layer.
+
+    '
+  lineage:
+    bronze_table: bronze_host_dim
+    bronze_column: email
+    silver_table: silver_host_dim
+    silver_column: email
+    transformation: DIRECT_COPY
+    transformation_logic: col('email')
+- name: phone
+  type: STRING
+  nullable: false
+  description: 'Host phone number for urgent communications and verification. Business:
+    Used for account verification, urgent booking issues, and emergency property access.
+    Required for platform trust. Technical: PII field. Format may vary by country,
+    standardized in Silver layer where possible.
+
+    '
+  lineage:
+    bronze_table: bronze_host_dim
+    bronze_column: phone
+    silver_table: silver_host_dim
+    silver_column: phone
+    transformation: DIRECT_COPY
+    transformation_logic: col('phone')
+- name: is_verified
+  type: BOOLEAN
+  nullable: false
+  description: 'Boolean flag indicating host verification status. Business: TRUE for
+    hosts who have completed identity verification process. Verified hosts show trust
+    badge on listings,  typically receive higher booking rates. Changes tracked over
+    time to measure verification program effectiveness. Technical: Verification status
+    from trust & safety system, updated when verification completed or revoked.
+
+    '
+  lineage:
+    bronze_table: bronze_host_dim
+    bronze_column: is_verified
+    silver_table: silver_host_dim
+    silver_column: is_verified
+    transformation: DIRECT_COPY
+    transformation_logic: col('is_verified')
+- name: is_active
+  type: BOOLEAN
+  nullable: false
+  description: 'Boolean flag indicating if host account is currently active. Business:
+    FALSE for suspended, deactivated, or churned hosts. Active hosts can receive bookings
+    and list properties.  Changes tracked to measure host retention and churn patterns.
+    Technical: Active status from account management system, updated when host deactivates
+    or is suspended.
+
+    '
+  lineage:
+    bronze_table: bronze_host_dim
+    bronze_column: is_active
+    silver_table: silver_host_dim
+    silver_column: is_active
+    transformation: DIRECT_COPY
+    transformation_logic: col('is_active')
+- name: rating
+  type: FLOAT
+  nullable: true
+  description: 'Host average rating score from guest reviews. Business: Rating on
+    1.0-5.0 scale, displayed on property listings to indicate host quality. NULL for
+    new hosts without reviews.  Changes tracked over time to monitor host quality
+    trends and identify improving or declining hosts. Technical: Calculated from review
+    aggregation in source system, precision to 1 decimal place (e.g., 4.7).
+
+    '
+  lineage:
+    bronze_table: bronze_host_dim
+    bronze_column: rating
+    silver_table: silver_host_dim
+    silver_column: rating
+    transformation: DIRECT_COPY
+    transformation_logic: col('rating')
+- name: country
+  type: STRING
+  nullable: false
+  description: 'Country of host residence for geographic market analysis. Business:
+    Used for host supply analysis by market, regulatory compliance, tax reporting,
+    and regional host programs.  Changes tracked to understand host migration or expansion
+    into new markets. Technical: Standardized country name from address validation,
+    links to dim_destination.country for supply-side geography analysis.
+
+    '
+  lineage:
+    bronze_table: bronze_host_dim
+    bronze_column: country
+    silver_table: silver_host_dim
+    silver_column: country
+    transformation: DIRECT_COPY
+    transformation_logic: col('country')
+- name: joined_at
+  type: DATE
+  nullable: false
+  description: 'Date when host account was originally created and joined the platform.
+    Business: Host registration date, used for cohort analysis, host lifetime value
+    calculations, and retention studies.  Enables calculation of tenure metrics and
+    time-on-platform analysis. Technical: Cast from original timestamp to date for
+    dimension modeling, never changes across SCD Type 2 versions.
+
+    '
+  lineage:
+    bronze_table: bronze_host_dim
+    bronze_column: joined_at_timestamp
+    silver_table: silver_host_dim
+    silver_column: joined_at_timestamp
+    transformation: CAST
+    transformation_logic: col('joined_at_timestamp').cast('date')
+    notes: Cast from timestamp to date, immutable across versions
+- name: effective_from
+  type: TIMESTAMP
+  nullable: false
+  description: 'Start timestamp for this version of the host record. Business: Indicates
+    when this set of host attributes became active. Used for point-in-time queries
+    to understand  host state at specific dates (e.g., host rating at time of booking).
+    Technical: SCD Type 2 field, populated from processed_timestamp when new version
+    created. Forms part of surrogate key.
+
+    '
+  lineage:
+    bronze_table: bronze_host_dim
+    bronze_column: processed_timestamp
+    silver_table: silver_host_dim
+    silver_column: processed_timestamp
+    transformation: DIRECT_COPY
+    transformation_logic: col('processed_timestamp')
+    notes: SCD Type 2 field, marks version start
+- name: effective_to
+  type: TIMESTAMP
+  nullable: true
+  description: 'End timestamp for this version of the host record. Business: NULL
+    indicates this is the current version. Non-NULL indicates historical record superseded
+    by newer version.  Use with WHERE effective_to IS NULL to get latest host state.
+    Technical: SCD Type 2 field, set to next version effective_from when superseded.
+    NULL for current version.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: lit(None).cast('timestamp')
+    notes: SCD Type 2 field, NULL for current version, set when superseded
+- name: is_current
+  type: BOOLEAN
+  nullable: false
+  description: 'Flag indicating if this is the current active version of the host
+    record. Business: TRUE for current host attributes, FALSE for historical records.  Use
+    with WHERE is_current = true to get latest state. Simplifies queries for current
+    host metrics. Technical: SCD Type 2 flag, updated to FALSE when new version created.
+    Exactly one current version per host_id.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: lit(True)
+    notes: SCD Type 2 flag, TRUE for current version
+- name: record_created_timestamp
+  type: TIMESTAMP
+  nullable: false
+  description: 'Timestamp when this specific version was first inserted into the Gold
+    layer. Business: Audit field for data lineage, troubleshooting, and understanding
+    when host changes were captured. Technical: Set once at INSERT time during MERGE
+    operation, never updated.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: current_timestamp()
+    notes: Generated during Gold MERGE INSERT, never updated
+- name: record_updated_timestamp
+  type: TIMESTAMP
+  nullable: false
+  description: 'Timestamp when this version record was last modified in Gold layer.
+    Business: Shows data freshness for this version. Useful for validating host rating
+    updates were captured. Technical: Updated on every MERGE operation that modifies
+    this version record.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: current_timestamp()
+    notes: Updated on every MERGE operation
+table_properties:
+  contains_pii: true
+  data_classification: confidential
+  business_owner: Host Operations
+  technical_owner: Data Engineering
+  update_frequency: Daily
+  retention_policy: 7_years

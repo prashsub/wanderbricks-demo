@@ -1,0 +1,542 @@
+{
+  "datasets": [
+    {
+      "name": "executive_kpis",
+      "displayName": "Executive KPIs",
+      "query": "SELECT SUM(total_amount) as total_revenue, COUNT(DISTINCT booking_id) as booking_count, AVG(total_amount) as avg_booking_value, SUM(CASE WHEN is_cancelled THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as cancellation_rate FROM ${catalog}.${gold_schema}.fact_booking_detail WHERE check_in_date >= :start_date AND check_in_date <= :end_date"
+    },
+    {
+      "name": "revenue_trend_monthly",
+      "displayName": "Revenue Trend (Monthly)",
+      "query": "SELECT DATE_TRUNC('month', check_in_date) as month, SUM(total_amount) as revenue, COUNT(DISTINCT booking_id) as bookings FROM ${catalog}.${gold_schema}.fact_booking_detail WHERE check_in_date >= :start_date AND check_in_date <= :end_date GROUP BY 1 ORDER BY 1"
+    },
+    {
+      "name": "revenue_by_destination",
+      "displayName": "Revenue by Destination",
+      "query": "SELECT d.destination, d.country, SUM(f.total_amount) as revenue, COUNT(DISTINCT f.booking_id) as bookings FROM ${catalog}.${gold_schema}.fact_booking_detail f JOIN ${catalog}.${gold_schema}.dim_destination d ON f.destination_id = d.destination_id WHERE f.check_in_date >= :start_date AND f.check_in_date <= :end_date GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 15"
+    },
+    {
+      "name": "booking_funnel",
+      "displayName": "Booking Funnel",
+      "query": "SELECT COUNT(DISTINCT booking_id) as confirmed_bookings, COUNT(DISTINCT CASE WHEN status = 'cancelled' THEN booking_id END) as cancelled, COUNT(DISTINCT CASE WHEN status = 'completed' THEN booking_id END) as completed FROM ${catalog}.${gold_schema}.fact_booking_detail WHERE check_in_date >= :start_date AND check_in_date <= :end_date"
+    },
+    {
+      "name": "cancellation_trend",
+      "displayName": "Cancellation Trend",
+      "query": "SELECT DATE_TRUNC('month', check_in_date) as month, SUM(CASE WHEN is_cancelled THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as cancellation_rate FROM ${catalog}.${gold_schema}.fact_booking_detail WHERE check_in_date >= :start_date AND check_in_date <= :end_date GROUP BY 1 ORDER BY 1"
+    },
+    {
+      "name": "revenue_by_property_type",
+      "displayName": "Revenue by Property Type",
+      "query": "SELECT p.property_type, SUM(f.total_amount) as revenue, COUNT(DISTINCT f.booking_id) as bookings, AVG(f.total_amount) as avg_booking_value FROM ${catalog}.${gold_schema}.fact_booking_detail f JOIN ${catalog}.${gold_schema}.dim_property p ON f.property_id = p.property_id WHERE p.is_current = true AND f.check_in_date >= :start_date AND f.check_in_date <= :end_date GROUP BY 1 ORDER BY 2 DESC"
+    },
+    {
+      "name": "lead_time_distribution",
+      "displayName": "Lead Time Distribution",
+      "query": "SELECT CASE WHEN days_between_booking_and_checkin < 7 THEN '0-7 days' WHEN days_between_booking_and_checkin < 30 THEN '7-30 days' WHEN days_between_booking_and_checkin < 90 THEN '30-90 days' ELSE '90+ days' END as lead_time_bucket, COUNT(*) as booking_count, SUM(total_amount) as revenue FROM ${catalog}.${gold_schema}.fact_booking_detail WHERE check_in_date >= :start_date AND check_in_date <= :end_date GROUP BY 1 ORDER BY 3 DESC"
+    },
+    {
+      "name": "booking_detail_table",
+      "displayName": "Booking Detail",
+      "query": "SELECT f.booking_id, u.name as customer_name, p.title as property_title, d.destination, f.check_in_date, f.nights_booked, f.total_amount, f.status FROM ${catalog}.${gold_schema}.fact_booking_detail f JOIN ${catalog}.${gold_schema}.dim_user u ON f.user_id = u.user_id AND u.is_current = true JOIN ${catalog}.${gold_schema}.dim_property p ON f.property_id = p.property_id AND p.is_current = true JOIN ${catalog}.${gold_schema}.dim_destination d ON f.destination_id = d.destination_id WHERE f.check_in_date >= :start_date AND f.check_in_date <= :end_date ORDER BY f.check_in_date DESC LIMIT 100"
+    },
+    {
+      "name": "destination_filter_values",
+      "displayName": "Destination Filter Values",
+      "query": "SELECT 'All' as destination UNION ALL SELECT DISTINCT destination FROM ${catalog}.${gold_schema}.dim_destination ORDER BY destination"
+    }
+  ],
+  
+  "pages": [
+    {
+      "name": "page_executive_summary",
+      "displayName": "Executive Summary",
+      "layout": [
+        {
+          "widget": {
+            "name": "kpi_total_revenue",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "executive_kpis",
+                  "fields": [
+                    {"name": "total_revenue", "expression": "`total_revenue`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_revenue"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Revenue",
+                "showDescription": true,
+                "description": "Total booking revenue for selected period"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_booking_count",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "executive_kpis",
+                  "fields": [
+                    {"name": "booking_count", "expression": "`booking_count`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "booking_count"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Bookings",
+                "showDescription": true,
+                "description": "Number of bookings in period"
+              }
+            }
+          },
+          "position": {"x": 2, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_avg_booking_value",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "executive_kpis",
+                  "fields": [
+                    {"name": "avg_booking_value", "expression": "`avg_booking_value`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_booking_value"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Booking Value",
+                "showDescription": true,
+                "description": "Average booking amount"
+              }
+            }
+          },
+          "position": {"x": 4, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "chart_revenue_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "revenue_trend_monthly",
+                  "fields": [
+                    {"name": "month", "expression": "`month`"},
+                    {"name": "revenue", "expression": "`revenue`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "month",
+                  "displayName": "Month",
+                  "scale": {"type": "temporal"}
+                },
+                "y": {
+                  "fieldName": "revenue",
+                  "displayName": "Revenue",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue Trend",
+                "showDescription": true,
+                "description": "Monthly revenue trend over time"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 2, "width": 3, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "chart_revenue_by_destination",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "revenue_by_destination",
+                  "fields": [
+                    {"name": "destination", "expression": "`destination`"},
+                    {"name": "revenue", "expression": "`revenue`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "destination",
+                  "displayName": "Destination",
+                  "scale": {"type": "categorical"}
+                },
+                "y": {
+                  "fieldName": "revenue",
+                  "displayName": "Revenue",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue by Destination",
+                "showDescription": true,
+                "description": "Top 15 destinations by revenue"
+              }
+            }
+          },
+          "position": {"x": 3, "y": 2, "width": 3, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_revenue_deep_dive",
+      "displayName": "Revenue Deep Dive",
+      "layout": [
+        {
+          "widget": {
+            "name": "chart_revenue_by_property_type",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "revenue_by_property_type",
+                  "fields": [
+                    {"name": "property_type", "expression": "`property_type`"},
+                    {"name": "revenue", "expression": "`revenue`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "revenue",
+                  "displayName": "Revenue",
+                  "scale": {"type": "quantitative"}
+                },
+                "color": {
+                  "fieldName": "property_type",
+                  "displayName": "Property Type",
+                  "scale": {"type": "categorical"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue Distribution by Property Type",
+                "showDescription": true,
+                "description": "Revenue share by property type"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 3, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "chart_lead_time",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "lead_time_distribution",
+                  "fields": [
+                    {"name": "lead_time_bucket", "expression": "`lead_time_bucket`"},
+                    {"name": "revenue", "expression": "`revenue`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "lead_time_bucket",
+                  "displayName": "Lead Time",
+                  "scale": {"type": "categorical"}
+                },
+                "y": {
+                  "fieldName": "revenue",
+                  "displayName": "Revenue",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue by Lead Time",
+                "showDescription": true,
+                "description": "Revenue distribution by booking lead time"
+              }
+            }
+          },
+          "position": {"x": 3, "y": 0, "width": 3, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "table_booking_detail",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "booking_detail_table",
+                  "fields": [
+                    {"name": "booking_id", "expression": "`booking_id`"},
+                    {"name": "customer_name", "expression": "`customer_name`"},
+                    {"name": "property_title", "expression": "`property_title`"},
+                    {"name": "destination", "expression": "`destination`"},
+                    {"name": "check_in_date", "expression": "`check_in_date`"},
+                    {"name": "nights_booked", "expression": "`nights_booked`"},
+                    {"name": "total_amount", "expression": "`total_amount`"},
+                    {"name": "status", "expression": "`status`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "booking_id", "title": "Booking ID"},
+                  {"fieldName": "customer_name", "title": "Customer"},
+                  {"fieldName": "property_title", "title": "Property"},
+                  {"fieldName": "destination", "title": "Destination"},
+                  {"fieldName": "check_in_date", "title": "Check-In", "type": "date"},
+                  {"fieldName": "nights_booked", "title": "Nights"},
+                  {"fieldName": "total_amount", "title": "Amount", "type": "number"},
+                  {"fieldName": "status", "title": "Status"}
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Recent Bookings Detail",
+                "showDescription": true,
+                "description": "Latest 100 bookings with details"
+              },
+              "itemsPerPage": 50,
+              "condensed": true,
+              "withRowNumber": true
+            }
+          },
+          "position": {"x": 0, "y": 6, "width": 6, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_cancellation_analysis",
+      "displayName": "Cancellation Analysis",
+      "layout": [
+        {
+          "widget": {
+            "name": "kpi_cancellation_rate",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "executive_kpis",
+                  "fields": [
+                    {"name": "cancellation_rate", "expression": "`cancellation_rate`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "cancellation_rate"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Cancellation Rate",
+                "showDescription": true,
+                "description": "Percentage of bookings cancelled"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "chart_cancellation_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "cancellation_trend",
+                  "fields": [
+                    {"name": "month", "expression": "`month`"},
+                    {"name": "cancellation_rate", "expression": "`cancellation_rate`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "month",
+                  "displayName": "Month",
+                  "scale": {"type": "temporal"}
+                },
+                "y": {
+                  "fieldName": "cancellation_rate",
+                  "displayName": "Cancellation Rate (%)",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Cancellation Rate Trend",
+                "showDescription": true,
+                "description": "Monthly cancellation rate percentage"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 2, "width": 6, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_global_filters",
+      "displayName": "Global Filters",
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layout": [
+        {
+          "widget": {
+            "name": "filter_destination",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "destination_filter_values",
+                  "fields": [
+                    {"name": "destination", "expression": "`destination`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "displayName": "Destination",
+                    "fieldName": "destination",
+                    "queryName": "main_query"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Destination"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 2, "height": 2}
+        }
+      ]
+    }
+  ],
+  
+  "parameters": [
+    {
+      "displayName": "Start Date",
+      "keyword": "start_date",
+      "dataType": "DATE",
+      "defaultSelection": {
+        "values": {
+          "dataType": "DATE",
+          "values": [{"value": "2024-01-01"}]
+        }
+      }
+    },
+    {
+      "displayName": "End Date",
+      "keyword": "end_date",
+      "dataType": "DATE",
+      "defaultSelection": {
+        "values": {
+          "dataType": "DATE",
+          "values": [{"value": "2024-12-31"}]
+        }
+      }
+    }
+  ],
+  
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {"light": "#F7F9FA", "dark": "#0B0E11"},
+      "widgetBackgroundColor": {"light": "#FFFFFF", "dark": "#1A1D21"},
+      "widgetBorderColor": {"light": "#E0E4E8", "dark": "#2A2E33"},
+      "fontColor": {"light": "#11171C", "dark": "#E8ECF0"},
+      "selectionColor": {"light": "#077A9D", "dark": "#8ACAE7"},
+      "visualizationColors": [
+        "#077A9D", "#00A972", "#FFAB00", "#FF3621",
+        "#8BCAE7", "#99DDB4", "#FCA4A1", "#AB4057",
+        "#6B4FBB", "#BF7080"
+      ],
+      "widgetHeaderAlignment": "LEFT"
+    },
+    "genieSpace": {"isEnabled": false}
+  }
+}
+

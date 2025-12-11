@@ -1,0 +1,70 @@
+# Wanderbricks Semantic Layer - Setup Job
+# 
+# Creates semantic layer assets for Genie Spaces and AI/BI dashboards:
+# - Table-Valued Functions (TVFs) for natural language queries
+# - Unity Catalog Metric Views for semantic metadata
+# 
+# Prerequisites: Gold layer tables must exist (run gold_setup_job first)
+# 
+# Tasks:
+# 1. create_table_valued_functions - Create TVFs for Genie Spaces (26 TVFs across 5 domains)
+# 2. create_metric_views - Calls standalone metric_views_job (5 metric views)
+#
+# Note: Metric views job can also be run standalone for testing/iteration:
+#   databricks bundle run metric_views_job -t dev
+#
+# Usage:
+#   databricks bundle run semantic_setup_job -t dev
+
+resources:
+  jobs:
+    semantic_setup_job:
+      name: "[${bundle.target}] Wanderbricks Semantic Layer - Setup"
+      description: "Creates semantic layer assets: TVFs and Metric Views for Genie and AI/BI dashboards"
+      
+      # PyYAML dependency required for YAML parsing
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - "PyYAML>=6.0"
+      
+      tasks:
+        # Task 1: Create Table-Valued Functions (TVFs)
+        - task_key: create_table_valued_functions
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_gold/create_all_tvfs.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.gold_schema}
+          timeout_seconds: 1200  # 20 minutes
+        
+        # Task 2: Run Metric Views Job (calls standalone job)
+        - task_key: create_metric_views
+          depends_on:
+            - task_key: create_table_valued_functions
+          run_job_task:
+            job_id: ${resources.jobs.metric_views_job.id}
+      
+      # Email notifications
+      email_notifications:
+        on_failure:
+          - prashanth.subrahmanyam@databricks.com
+        on_success:
+          - prashanth.subrahmanyam@databricks.com
+      
+      # Timeout at job level
+      timeout_seconds: 3600  # 1 hour total
+      
+      # Tags
+      tags:
+        environment: ${bundle.target}
+        project: wanderbricks
+        layer: semantic
+        job_type: setup
+        compute_type: serverless
+        phase: "4.2-4.3"
+        artifact_type: tvfs_and_metric_views
+

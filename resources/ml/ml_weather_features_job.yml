@@ -1,0 +1,39 @@
+# ML Weather-Aware Feature Engineering Job
+# Creates enhanced property features with weather, seasonality, and regional metrics
+# Reference: phase4-addendum-4.1-ml-models.md + production demand forecasting requirements
+
+resources:
+  jobs:
+    ml_weather_features_job:
+      name: "[${bundle.target}] ML Weather Features Setup"
+      description: "Creates weather-aware property features for seasonal demand forecasting"
+      
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - "databricks-feature-engineering>=0.6.0"
+      
+      tasks:
+        - task_key: create_weather_features
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_ml/feature_store/create_weather_features.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.gold_schema}
+              feature_schema: ${var.ml_schema}
+          timeout_seconds: 1800
+      
+      email_notifications:
+        on_failure:
+          - prashanth.subrahmanyam@databricks.com
+      
+      tags:
+        environment: ${bundle.target}
+        project: wanderbricks
+        layer: ml
+        job_type: feature_engineering
+        features: weather_seasonality_regional
+

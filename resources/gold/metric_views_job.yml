@@ -1,0 +1,46 @@
+# Metric Views Creation Job
+# Creates semantic layer metric views from YAML definitions for Genie and AI/BI dashboards
+# Reference: Phase 4 Addendum 4.3
+
+resources:
+  jobs:
+    metric_views_job:
+      name: "[${bundle.target}] Wanderbricks Metric Views Creation"
+      description: "Creates semantic layer metric views from YAML definitions for Genie AI and AI/BI dashboards"
+      
+      # Shared environment for all tasks
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - "PyYAML==6.0.1"
+      
+      tasks:
+        - task_key: create_metric_views
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_gold/semantic/create_metric_views.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.gold_schema}
+      
+      # Email notifications
+      email_notifications:
+        on_failure:
+          - prashanth.subrahmanyam@databricks.com
+        on_success:
+          - prashanth.subrahmanyam@databricks.com
+      
+      # Timeout at job level
+      timeout_seconds: 3600  # 1 hour
+      
+      tags:
+        environment: ${bundle.target}
+        project: wanderbricks
+        layer: gold
+        compute_type: serverless
+        job_type: setup
+        phase: "4.3"
+        artifact_type: metric_views
+

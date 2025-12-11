@@ -1,0 +1,64 @@
+# Wanderbricks Lakehouse Monitoring Setup Job (Initial Creation)
+# 
+# Creates Lakehouse Monitors for Gold layer tables with custom business metrics.
+# DELETES existing monitors before creating new ones (complete refresh).
+# 
+# Use Cases:
+# - Initial monitor setup
+# - Complete monitor recreation (fresh start)
+# - Recovering from corrupted monitors
+# 
+# Monitors Created:
+# 1. Revenue Monitor (fact_booking_daily) - 6 custom metrics
+# 2. Engagement Monitor (fact_property_engagement) - 4 custom metrics
+# 3. Property Monitor (dim_property) - 3 custom metrics
+# 4. Host Monitor (dim_host) - 5 custom metrics
+# 5. Customer Monitor (dim_user) - 4 custom metrics
+# 
+# IMPORTANT: 
+# - This job DELETES existing monitors (historical data lost)
+# - Monitors take 15-20 minutes to initialize after creation
+# - For updates without deletion, use update_lakehouse_monitoring_job
+# 
+# Check Databricks UI for monitor status and dashboards.
+
+resources:
+  jobs:
+    lakehouse_monitoring_job:
+      name: "[${bundle.target}] Wanderbricks Lakehouse Monitoring Setup"
+      description: "Creates Lakehouse Monitors with custom metrics for Gold layer tables"
+      
+      # Serverless environment
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - "databricks-sdk>=0.18.0"
+      
+      tasks:
+        - task_key: setup_lakehouse_monitoring
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_gold/lakehouse_monitoring.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.gold_schema}
+      
+      # Timeout: 30 minutes (monitor creation is fast, but good to have buffer)
+      timeout_seconds: 1800
+      
+      # Email notifications
+      email_notifications:
+        on_failure:
+          - prashanth.subrahmanyam@databricks.com
+        on_success:
+          - prashanth.subrahmanyam@databricks.com
+      
+      tags:
+        environment: ${bundle.target}
+        project: wanderbricks
+        layer: gold
+        job_type: monitoring
+        compute_type: serverless
+

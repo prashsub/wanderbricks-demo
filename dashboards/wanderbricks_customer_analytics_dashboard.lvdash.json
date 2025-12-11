@@ -1,0 +1,522 @@
+{
+  "datasets": [
+    {
+      "name": "customer_kpis",
+      "displayName": "Customer KPIs",
+      "query": "SELECT COUNT(DISTINCT user_id) as total_customers, SUM(CASE WHEN is_business THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as business_pct FROM ${catalog}.${gold_schema}.dim_user WHERE is_current = true"
+    },
+    {
+      "name": "customer_segments",
+      "displayName": "Customer Segments",
+      "query": "SELECT CASE WHEN booking_count >= 5 THEN 'VIP (5+ bookings)' WHEN booking_count >= 3 THEN 'Loyal (3-4 bookings)' WHEN booking_count >= 2 THEN 'Returning (2 bookings)' ELSE 'New (1 booking)' END as segment, COUNT(DISTINCT user_id) as customer_count, SUM(total_spend) as total_revenue, AVG(total_spend) as avg_spend_per_customer FROM (SELECT f.user_id, COUNT(*) as booking_count, SUM(f.total_amount) as total_spend FROM ${catalog}.${gold_schema}.fact_booking_detail f WHERE f.check_in_date >= :start_date AND f.check_in_date <= :end_date GROUP BY 1) customer_summary GROUP BY 1 ORDER BY 3 DESC"
+    },
+    {
+      "name": "business_vs_leisure",
+      "displayName": "Business vs Leisure",
+      "query": "SELECT CASE WHEN u.is_business THEN 'Business' ELSE 'Leisure' END as segment, COUNT(DISTINCT f.booking_id) as bookings, SUM(f.total_amount) as revenue, AVG(f.total_amount) as avg_booking_value, AVG(f.nights_booked) as avg_stay_length FROM ${catalog}.${gold_schema}.fact_booking_detail f JOIN ${catalog}.${gold_schema}.dim_user u ON f.user_id = u.user_id AND u.is_current = true WHERE f.check_in_date >= :start_date AND f.check_in_date <= :end_date GROUP BY 1"
+    },
+    {
+      "name": "customers_by_country",
+      "displayName": "Customers by Country",
+      "query": "SELECT u.country, COUNT(DISTINCT u.user_id) as customer_count, COUNT(DISTINCT f.booking_id) as bookings, SUM(f.total_amount) as revenue FROM ${catalog}.${gold_schema}.dim_user u LEFT JOIN ${catalog}.${gold_schema}.fact_booking_detail f ON u.user_id = f.user_id AND f.check_in_date >= :start_date AND f.check_in_date <= :end_date WHERE u.is_current = true GROUP BY 1 ORDER BY 4 DESC LIMIT 15"
+    },
+    {
+      "name": "booking_frequency_distribution",
+      "displayName": "Booking Frequency Distribution",
+      "query": "SELECT CASE WHEN booking_count = 1 THEN '1 booking' WHEN booking_count = 2 THEN '2 bookings' WHEN booking_count BETWEEN 3 AND 4 THEN '3-4 bookings' WHEN booking_count BETWEEN 5 AND 9 THEN '5-9 bookings' ELSE '10+ bookings' END as frequency_bucket, COUNT(DISTINCT user_id) as customer_count FROM (SELECT user_id, COUNT(*) as booking_count FROM ${catalog}.${gold_schema}.fact_booking_detail WHERE check_in_date >= :start_date AND check_in_date <= :end_date GROUP BY 1) booking_freq GROUP BY 1 ORDER BY 2 DESC"
+    },
+    {
+      "name": "lead_time_by_segment",
+      "displayName": "Lead Time by Segment",
+      "query": "SELECT CASE WHEN u.is_business THEN 'Business' ELSE 'Leisure' END as segment, AVG(f.days_between_booking_and_checkin) as avg_lead_time, PERCENTILE_APPROX(f.days_between_booking_and_checkin, 0.5) as median_lead_time FROM ${catalog}.${gold_schema}.fact_booking_detail f JOIN ${catalog}.${gold_schema}.dim_user u ON f.user_id = u.user_id AND u.is_current = true WHERE f.check_in_date >= :start_date AND f.check_in_date <= :end_date GROUP BY 1"
+    },
+    {
+      "name": "top_customers_by_spend",
+      "displayName": "Top Customers by Spend",
+      "query": "SELECT u.user_id, u.name, u.country, u.is_business, COUNT(DISTINCT f.booking_id) as booking_count, SUM(f.total_amount) as total_spend, AVG(f.total_amount) as avg_booking_value FROM ${catalog}.${gold_schema}.dim_user u JOIN ${catalog}.${gold_schema}.fact_booking_detail f ON u.user_id = f.user_id WHERE u.is_current = true AND f.check_in_date >= :start_date AND f.check_in_date <= :end_date GROUP BY 1, 2, 3, 4 ORDER BY 6 DESC LIMIT 20"
+    },
+    {
+      "name": "new_vs_returning",
+      "displayName": "New vs Returning",
+      "query": "SELECT DATE_TRUNC('month', f.check_in_date) as month, COUNT(DISTINCT CASE WHEN customer_cohort.first_booking_date = f.check_in_date THEN f.user_id END) as new_customers, COUNT(DISTINCT CASE WHEN customer_cohort.first_booking_date < f.check_in_date THEN f.user_id END) as returning_customers FROM ${catalog}.${gold_schema}.fact_booking_detail f JOIN (SELECT user_id, MIN(check_in_date) as first_booking_date FROM ${catalog}.${gold_schema}.fact_booking_detail GROUP BY 1) customer_cohort ON f.user_id = customer_cohort.user_id WHERE f.check_in_date >= :start_date AND f.check_in_date <= :end_date GROUP BY 1 ORDER BY 1"
+    },
+    {
+      "name": "destination_preferences_by_segment",
+      "displayName": "Destination Preferences by Segment",
+      "query": "SELECT CASE WHEN u.is_business THEN 'Business' ELSE 'Leisure' END as segment, d.destination, COUNT(DISTINCT f.booking_id) as bookings, SUM(f.total_amount) as revenue FROM ${catalog}.${gold_schema}.fact_booking_detail f JOIN ${catalog}.${gold_schema}.dim_user u ON f.user_id = u.user_id AND u.is_current = true JOIN ${catalog}.${gold_schema}.dim_destination d ON f.destination_id = d.destination_id WHERE f.check_in_date >= :start_date AND f.check_in_date <= :end_date GROUP BY 1, 2 ORDER BY 1, 4 DESC LIMIT 30"
+    },
+    {
+      "name": "user_type_filter_values",
+      "displayName": "User Type Filter Values",
+      "query": "SELECT 'All' as user_type UNION ALL SELECT 'Business' as user_type UNION ALL SELECT 'Leisure' as user_type ORDER BY user_type"
+    }
+  ],
+  
+  "pages": [
+    {
+      "name": "page_customer_overview",
+      "displayName": "Customer Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "kpi_total_customers",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "customer_kpis",
+                  "fields": [
+                    {"name": "total_customers", "expression": "`total_customers`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_customers"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Customers",
+                "showDescription": true,
+                "description": "Number of active customers"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_business_pct",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "customer_kpis",
+                  "fields": [
+                    {"name": "business_pct", "expression": "`business_pct`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "business_pct"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Business %",
+                "showDescription": true,
+                "description": "Percentage of business accounts"
+              }
+            }
+          },
+          "position": {"x": 2, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "chart_customer_segments",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "customer_segments",
+                  "fields": [
+                    {"name": "segment", "expression": "`segment`"},
+                    {"name": "customer_count", "expression": "`customer_count`"},
+                    {"name": "total_revenue", "expression": "`total_revenue`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "customer_count",
+                  "displayName": "Customer Count",
+                  "scale": {"type": "quantitative"}
+                },
+                "color": {
+                  "fieldName": "segment",
+                  "displayName": "Segment",
+                  "scale": {"type": "categorical"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Customer Segments",
+                "showDescription": true,
+                "description": "Distribution by booking frequency"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 2, "width": 3, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "chart_customers_by_country",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "customers_by_country",
+                  "fields": [
+                    {"name": "country", "expression": "`country`"},
+                    {"name": "revenue", "expression": "`revenue`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "country",
+                  "displayName": "Country",
+                  "scale": {"type": "categorical"}
+                },
+                "y": {
+                  "fieldName": "revenue",
+                  "displayName": "Revenue",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue by Customer Country",
+                "showDescription": true,
+                "description": "Top countries by customer revenue"
+              }
+            }
+          },
+          "position": {"x": 3, "y": 2, "width": 3, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "chart_new_vs_returning",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "new_vs_returning",
+                  "fields": [
+                    {"name": "month", "expression": "`month`"},
+                    {"name": "new_customers", "expression": "`new_customers`"},
+                    {"name": "returning_customers", "expression": "`returning_customers`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "month",
+                  "displayName": "Month",
+                  "scale": {"type": "temporal"}
+                },
+                "y": {
+                  "fieldName": "new_customers",
+                  "displayName": "New Customers",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "New vs Returning Customers",
+                "showDescription": true,
+                "description": "Customer acquisition and retention trends"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 8, "width": 6, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_segment_analysis",
+      "displayName": "Segment Analysis",
+      "layout": [
+        {
+          "widget": {
+            "name": "table_business_vs_leisure",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "business_vs_leisure",
+                  "fields": [
+                    {"name": "segment", "expression": "`segment`"},
+                    {"name": "bookings", "expression": "`bookings`"},
+                    {"name": "revenue", "expression": "`revenue`"},
+                    {"name": "avg_booking_value", "expression": "`avg_booking_value`"},
+                    {"name": "avg_stay_length", "expression": "`avg_stay_length`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "segment", "title": "Segment"},
+                  {"fieldName": "bookings", "title": "Bookings"},
+                  {"fieldName": "revenue", "title": "Revenue", "type": "number"},
+                  {"fieldName": "avg_booking_value", "title": "Avg Booking Value", "type": "number"},
+                  {"fieldName": "avg_stay_length", "title": "Avg Nights", "type": "number"}
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Business vs Leisure Comparison",
+                "showDescription": true,
+                "description": "Key metrics by customer segment"
+              },
+              "itemsPerPage": 10,
+              "condensed": true,
+              "withRowNumber": false
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 6, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "chart_booking_frequency",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "booking_frequency_distribution",
+                  "fields": [
+                    {"name": "frequency_bucket", "expression": "`frequency_bucket`"},
+                    {"name": "customer_count", "expression": "`customer_count`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "frequency_bucket",
+                  "displayName": "Booking Frequency",
+                  "scale": {"type": "categorical"}
+                },
+                "y": {
+                  "fieldName": "customer_count",
+                  "displayName": "Customer Count",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Booking Frequency Distribution",
+                "showDescription": true,
+                "description": "Customers by number of bookings"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 6, "width": 6, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_behavior_patterns",
+      "displayName": "Behavior Patterns",
+      "layout": [
+        {
+          "widget": {
+            "name": "table_top_customers",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_customers_by_spend",
+                  "fields": [
+                    {"name": "name", "expression": "`name`"},
+                    {"name": "country", "expression": "`country`"},
+                    {"name": "is_business", "expression": "`is_business`"},
+                    {"name": "booking_count", "expression": "`booking_count`"},
+                    {"name": "total_spend", "expression": "`total_spend`"},
+                    {"name": "avg_booking_value", "expression": "`avg_booking_value`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "name", "title": "Customer Name"},
+                  {"fieldName": "country", "title": "Country"},
+                  {"fieldName": "is_business", "title": "Business"},
+                  {"fieldName": "booking_count", "title": "Bookings"},
+                  {"fieldName": "total_spend", "title": "Total Spend", "type": "number"},
+                  {"fieldName": "avg_booking_value", "title": "Avg Value", "type": "number"}
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Top Customers by Spend",
+                "showDescription": true,
+                "description": "Highest value customers"
+              },
+              "itemsPerPage": 20,
+              "condensed": true,
+              "withRowNumber": true
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 6, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "table_lead_time_by_segment",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "lead_time_by_segment",
+                  "fields": [
+                    {"name": "segment", "expression": "`segment`"},
+                    {"name": "avg_lead_time", "expression": "`avg_lead_time`"},
+                    {"name": "median_lead_time", "expression": "`median_lead_time`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "segment", "title": "Segment"},
+                  {"fieldName": "avg_lead_time", "title": "Avg Lead Time (days)", "type": "number"},
+                  {"fieldName": "median_lead_time", "title": "Median Lead Time (days)", "type": "number"}
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Booking Lead Time by Segment",
+                "showDescription": true,
+                "description": "How far in advance customers book"
+              },
+              "itemsPerPage": 10,
+              "condensed": true,
+              "withRowNumber": false
+            }
+          },
+          "position": {"x": 0, "y": 6, "width": 6, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_global_filters",
+      "displayName": "Global Filters",
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layout": [
+        {
+          "widget": {
+            "name": "filter_user_type",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "user_type_filter_values",
+                  "fields": [
+                    {"name": "user_type", "expression": "`user_type`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "displayName": "User Type",
+                    "fieldName": "user_type",
+                    "queryName": "main_query"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "User Type"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 2, "height": 2}
+        }
+      ]
+    }
+  ],
+  
+  "parameters": [
+    {
+      "displayName": "Start Date",
+      "keyword": "start_date",
+      "dataType": "DATE",
+      "defaultSelection": {
+        "values": {
+          "dataType": "DATE",
+          "values": [{"value": "2024-01-01"}]
+        }
+      }
+    },
+    {
+      "displayName": "End Date",
+      "keyword": "end_date",
+      "dataType": "DATE",
+      "defaultSelection": {
+        "values": {
+          "dataType": "DATE",
+          "values": [{"value": "2024-12-31"}]
+        }
+      }
+    }
+  ],
+  
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {"light": "#F7F9FA", "dark": "#0B0E11"},
+      "widgetBackgroundColor": {"light": "#FFFFFF", "dark": "#1A1D21"},
+      "widgetBorderColor": {"light": "#E0E4E8", "dark": "#2A2E33"},
+      "fontColor": {"light": "#11171C", "dark": "#E8ECF0"},
+      "selectionColor": {"light": "#077A9D", "dark": "#8ACAE7"},
+      "visualizationColors": [
+        "#077A9D", "#00A972", "#FFAB00", "#FF3621",
+        "#8BCAE7", "#99DDB4", "#FCA4A1", "#AB4057",
+        "#6B4FBB", "#BF7080"
+      ],
+      "widgetHeaderAlignment": "LEFT"
+    },
+    "genieSpace": {"isEnabled": false}
+  }
+}
+

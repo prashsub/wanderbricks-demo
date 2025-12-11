@@ -1,0 +1,171 @@
+# Table metadata
+table_name: dim_destination
+domain: geography
+bronze_source: destinations
+
+# Table description
+description: >
+  Gold layer destination dimension with geographic market reference data for location-based analysis.
+  Business: Maintains destination reference data including location names, geographic hierarchy, and market descriptions. 
+  Used for geographic market analysis, destination popularity tracking, regional inventory management, and travel trend analysis. 
+  Enables grouping properties and bookings by city, state, and country for market intelligence. Reference data that rarely changes.
+  Technical: Type 1 dimension (overwrite on change) as destination attributes are stable and historical tracking not required. 
+  Updates via Delta MERGE from Silver reference tables.
+
+# Grain definition
+grain: "One row per destination (city/area within country)"
+
+# SCD strategy
+scd_type: 1
+
+# Primary key definition
+primary_key:
+  columns: ['destination_id']
+  composite: false
+
+# Foreign key definitions (applied separately)
+foreign_keys: []
+
+# Column definitions
+columns:
+  # Primary Key
+  - name: destination_id
+    type: BIGINT
+    nullable: false
+    description: >
+      Unique identifier for each destination.
+      Business: Primary identifier used for linking properties and bookings to geographic locations.
+      Technical: Surrogate key generated in source system, no SCD versioning needed.
+    lineage:
+      bronze_table: bronze_destination_dim
+      bronze_column: destination_id
+      silver_table: silver_destination_dim
+      silver_column: destination_id
+      transformation: "DIRECT_COPY"
+      transformation_logic: "col('destination_id')"
+  
+  # Geographic Hierarchy
+  - name: destination
+    type: STRING
+    nullable: false
+    description: >
+      Destination name (city or area).
+      Business: Primary location name displayed in search results and property listings. Used for destination popularity analysis 
+      and travel trend reporting. Examples: 'San Francisco', 'Paris', 'Tokyo'.
+      Technical: Standardized city/area name from geocoding service, unique within country.
+    lineage:
+      bronze_table: bronze_destination_dim
+      bronze_column: destination
+      silver_table: silver_destination_dim
+      silver_column: destination
+      transformation: "DIRECT_COPY"
+      transformation_logic: "col('destination')"
+  
+  - name: country
+    type: STRING
+    nullable: false
+    description: >
+      Country name where destination is located.
+      Business: Top-level geographic grouping for international market analysis, regional inventory tracking, and country-level reporting. 
+      Matches country names in dim_user and dim_host for cross-dimensional geography analysis.
+      Technical: Full country name (not code), standardized from ISO country list.
+    lineage:
+      bronze_table: bronze_destination_dim
+      bronze_column: country
+      silver_table: silver_destination_dim
+      silver_column: country
+      transformation: "DIRECT_COPY"
+      transformation_logic: "col('country')"
+  
+  - name: state_or_province
+    type: STRING
+    nullable: true
+    description: >
+      State, province, or region name where destination is located.
+      Business: Mid-level geographic grouping for sub-national market analysis, especially important for large countries like USA, Canada, Australia. 
+      NULL for countries without state/province structure. Used for state-level inventory and demand analysis.
+      Technical: Full state/province name from administrative boundaries, NULL for small countries.
+    lineage:
+      bronze_table: bronze_destination_dim
+      bronze_column: state_or_province
+      silver_table: silver_destination_dim
+      silver_column: state_or_province
+      transformation: "DIRECT_COPY"
+      transformation_logic: "col('state_or_province')"
+  
+  - name: state_or_province_code
+    type: STRING
+    nullable: true
+    description: >
+      Two-letter state or province code.
+      Business: Abbreviated state code for compact display and standardized filtering (e.g., 'CA' for California, 'ON' for Ontario). 
+      NULL for countries without state/province structure.
+      Technical: ISO 3166-2 subdivision codes where available, NULL for small countries.
+    lineage:
+      bronze_table: bronze_destination_dim
+      bronze_column: state_or_province_code
+      silver_table: silver_destination_dim
+      silver_column: state_or_province_code
+      transformation: "DIRECT_COPY"
+      transformation_logic: "col('state_or_province_code')"
+  
+  # Destination Content
+  - name: description
+    type: STRING
+    nullable: true
+    description: >
+      Rich text description of the destination for marketing and SEO.
+      Business: Detailed destination information containing tourist attractions, demographics, historical/geographical context, popular cuisine, 
+      transportation info, and travel guidelines. Used for destination landing pages, SEO content, and travel planning. 
+      May contain markdown formatting.
+      Technical: Long text field with markdown format, sourced from content management system. Can be quite large (several KB).
+    lineage:
+      bronze_table: bronze_destination_dim
+      bronze_column: description
+      silver_table: silver_destination_dim
+      silver_column: description
+      transformation: "DIRECT_COPY"
+      transformation_logic: "col('description')"
+  
+  # Audit Columns
+  - name: record_created_timestamp
+    type: TIMESTAMP
+    nullable: false
+    description: >
+      Timestamp when destination was first inserted into Gold layer.
+      Business: Audit field for tracking when new destinations were added to the platform.
+      Technical: Set once at INSERT time, never updated (Type 1 dimension).
+    lineage:
+      bronze_table: N/A
+      bronze_column: N/A
+      silver_table: N/A
+      silver_column: N/A
+      transformation: "GENERATED"
+      transformation_logic: "current_timestamp()"
+      notes: "Generated during Gold MERGE INSERT, never updated"
+  
+  - name: record_updated_timestamp
+    type: TIMESTAMP
+    nullable: false
+    description: >
+      Timestamp when destination record was last modified.
+      Business: Shows data freshness for destination content updates (description changes, name corrections).
+      Technical: Updated on every MERGE operation that modifies any attribute.
+    lineage:
+      bronze_table: N/A
+      bronze_column: N/A
+      silver_table: N/A
+      silver_column: N/A
+      transformation: "GENERATED"
+      transformation_logic: "current_timestamp()"
+      notes: "Updated on every MERGE operation"
+
+# Table properties
+table_properties:
+  contains_pii: false
+  data_classification: internal
+  business_owner: Product Content Team
+  technical_owner: Data Engineering
+  update_frequency: Weekly
+  retention_policy: Indefinite
+

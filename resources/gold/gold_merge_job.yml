@@ -1,0 +1,48 @@
+# Wanderbricks Gold Layer - MERGE Job
+# 
+# Performs Delta MERGE operations from Silver to Gold layer.
+# 
+# Tasks:
+# - Merge dimensions (SCD Type 1 and Type 2)
+# - Merge fact tables (transaction and aggregated)
+# - Deduplication and grain validation
+# - Schema-aware column mapping
+#
+# Usage:
+#   databricks bundle run gold_merge_job -t dev
+
+resources:
+  jobs:
+    gold_merge_job:
+      name: "[${bundle.target}] Wanderbricks Gold Layer - MERGE Updates"
+      description: "Periodic MERGE operations from Silver to Gold with deduplication and validation"
+      
+      tasks:
+        - task_key: merge_gold_tables
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_gold/merge_gold_tables.py
+            base_parameters:
+              catalog: ${var.catalog}
+              silver_schema: ${var.silver_tables_schema}
+              gold_schema: ${var.gold_schema}
+          timeout_seconds: 3600  # 1 hour
+      
+      # Schedule for periodic updates (paused by default in dev)
+      schedule:
+        quartz_cron_expression: "0 0 3 * * ?"  # Daily at 3 AM
+        timezone_id: "America/New_York"
+        pause_status: PAUSED  # Enable manually or in prod
+      
+      # Email notifications
+      email_notifications:
+        on_failure:
+          - prashanth.subrahmanyam@databricks.com
+      
+      # Tags
+      tags:
+        environment: ${bundle.target}
+        project: wanderbricks
+        layer: gold
+        job_type: pipeline
+        compute_type: serverless
+

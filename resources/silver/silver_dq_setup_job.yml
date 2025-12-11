@@ -1,0 +1,43 @@
+# Wanderbricks Silver Layer - DQ Rules Setup Job
+# One-time job to create and populate data quality rules Delta table
+#
+# Usage:
+#   databricks bundle run silver_dq_setup_job -t dev
+
+resources:
+  jobs:
+    silver_dq_setup_job:
+      name: "[${bundle.target}] Wanderbricks Silver - DQ Rules Setup"
+      description: "One-time: Create and populate data quality rules Delta table for Silver layer DLT expectations"
+      
+      # Serverless environment configuration
+      environments:
+        - environment_key: "default"
+          spec:
+            environment_version: "4"
+      
+      tasks:
+        - task_key: setup_dq_rules_table
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_silver/setup_dq_rules_table.py
+            base_parameters:
+              catalog: ${var.catalog}
+              # Use silver_tables_schema to match DLT-created schema (includes dev prefix)
+              silver_schema: ${var.silver_tables_schema}
+      
+      # Email notifications
+      email_notifications:
+        on_failure:
+          - data-engineering@company.com
+        on_success:
+          - data-engineering@company.com
+      
+      # Tags
+      tags:
+        environment: ${bundle.target}
+        project: wanderbricks
+        layer: silver
+        job_type: setup
+        compute_type: serverless
+

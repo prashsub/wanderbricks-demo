@@ -1,0 +1,92 @@
+# ML Model Serving Endpoints
+# Serverless real-time inference endpoints for Wanderbricks ML models
+# Reference: https://learn.microsoft.com/en-us/azure/databricks/machine-learning/model-serving/
+
+# Note: Model serving endpoints are typically created via UI or API
+# after models are registered. This file documents the configuration.
+#
+# To create endpoints programmatically, use:
+# databricks serving-endpoints create --json-file endpoint_config.json
+#
+# Or via Python API:
+# from databricks.sdk import WorkspaceClient
+# w = WorkspaceClient()
+# w.serving_endpoints.create(...)
+
+# Endpoint Configuration Examples:
+
+# 1. Demand Predictor Endpoint
+# {
+#   "name": "wanderbricks-demand-predictor",
+#   "config": {
+#     "served_models": [{
+#       "model_name": "prashanth_subrahmanyam_catalog.wanderbricks_ml.demand_predictor",
+#       "model_version": "1",
+#       "workload_size": "Small",
+#       "scale_to_zero_enabled": true
+#     }]
+#   }
+# }
+
+# 2. Conversion Predictor Endpoint
+# {
+#   "name": "wanderbricks-conversion-predictor",
+#   "config": {
+#     "served_models": [{
+#       "model_name": "prashanth_subrahmanyam_catalog.wanderbricks_ml.conversion_predictor",
+#       "model_version": "1",
+#       "workload_size": "Small",
+#       "scale_to_zero_enabled": true
+#     }]
+#   }
+# }
+
+# 3. Pricing Optimizer Endpoint
+# {
+#   "name": "wanderbricks-pricing-optimizer",
+#   "config": {
+#     "served_models": [{
+#       "model_name": "prashanth_subrahmanyam_catalog.wanderbricks_ml.pricing_optimizer",
+#       "model_version": "1",
+#       "workload_size": "Small",
+#       "scale_to_zero_enabled": true
+#     }]
+#   }
+# }
+
+# 4. Customer LTV Endpoint
+# {
+#   "name": "wanderbricks-customer-ltv",
+#   "config": {
+#     "served_models": [{
+#       "model_name": "prashanth_subrahmanyam_catalog.wanderbricks_ml.customer_ltv_predictor",
+#       "model_version": "1",
+#       "workload_size": "Small",
+#       "scale_to_zero_enabled": true
+#     }]
+#   }
+# }
+
+# Deployment Steps:
+# 1. Train models using ml_training_orchestrator_job
+# 2. Verify models in Unity Catalog Model Registry
+# 3. Create serving endpoints via UI or API
+# 4. Test endpoints with sample requests
+# 5. Monitor performance and costs
+
+# Sample Request Format (Demand Predictor):
+# POST /serving-endpoints/wanderbricks-demand-predictor/invocations
+# {
+#   "dataframe_records": [
+#     {
+#       "property_id": "PROP001",
+#       "check_in_date": "2025-06-15"
+#     }
+#   ]
+# }
+
+# Sample Response:
+# {
+#   "predictions": [12.5]
+# }
+

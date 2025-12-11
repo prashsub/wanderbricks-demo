@@ -1,0 +1,250 @@
+table_name: fact_property_engagement
+domain: engagement
+bronze_source: page_views, clickstream
+description: 'Gold layer daily aggregated property engagement fact table with pre-calculated
+  marketing and conversion metrics. Business: Primary source for marketing performance
+  analysis, property visibility tracking, and conversion funnel metrics.  Pre-aggregated
+  engagement metrics enable fast marketing dashboard queries and property popularity
+  analysis. Used for property  listing optimization, marketing campaign effectiveness,
+  and conversion rate analysis. Aggregates views, clicks, searches, and  user interactions
+  by property and date. Enables funnel analysis from impressions to bookings when
+  joined with booking facts. Technical: Grain is one row per property per engagement
+  date (daily aggregate). Derived from Silver clickstream and page view  events via
+  aggregation. Updates via Delta MERGE with additive aggregations. Composite primary
+  key (property_id, engagement_date).
+
+  '
+grain: One row per property_id per engagement_date (daily aggregate)
+primary_key:
+  columns:
+  - property_id
+  - engagement_date
+  composite: true
+foreign_keys:
+- columns:
+  - property_id
+  references: dim_property(property_id)
+  nullable: false
+- columns:
+  - engagement_date
+  references: dim_date(date)
+  nullable: false
+columns:
+- name: property_id
+  type: BIGINT
+  nullable: false
+  description: 'Property identifier (part of composite primary key). Business: Links
+    to dim_property for property attributes, pricing, and listing quality.  Groups
+    all engagement events for this property on this date. Technical: FK to dim_property.property_id
+    (business key). Part of composite PK (property_id, engagement_date).
+
+    '
+  lineage:
+    bronze_table: bronze_page_views
+    bronze_column: property_id
+    silver_table: silver_page_views
+    silver_column: property_id
+    transformation: DIRECT_COPY
+    transformation_logic: col('property_id')
+    groupby_columns:
+    - property_id
+    - engagement_date
+    notes: Part of daily aggregation grain
+- name: engagement_date
+  type: DATE
+  nullable: false
+  description: 'Date when engagement events occurred (part of composite primary key).
+    Business: Links to dim_date for time-based engagement analysis and trending. Groups
+    all engagement events on this date.  Used for daily engagement tracking, campaign
+    performance, and trend analysis. Technical: FK to dim_date.date. Part of composite
+    PK (property_id, engagement_date).
+
+    '
+  lineage:
+    bronze_table: bronze_page_views
+    bronze_column: event_timestamp
+    silver_table: silver_page_views
+    silver_column: event_timestamp
+    transformation: DATE_TRUNC
+    transformation_logic: date_trunc('day', col('event_timestamp')).cast('date')
+    groupby_columns:
+    - property_id
+    - engagement_date
+    notes: Part of daily aggregation grain, truncated from timestamp
+- name: view_count
+  type: BIGINT
+  nullable: false
+  description: 'Total number of property page views on this date. Business: Total
+    impressions for this property, primary top-of-funnel metric. Used for property
+    visibility tracking,  SEO effectiveness, and marketing reach analysis. Includes
+    all views (authenticated and anonymous users). Technical: COUNT(view_id) from
+    page_views WHERE property_id = X AND DATE(timestamp) = engagement_date.
+
+    '
+  lineage:
+    bronze_table: bronze_page_views
+    bronze_column: view_id
+    silver_table: silver_page_views
+    silver_column: view_id
+    transformation: AGGREGATE_COUNT
+    transformation_logic: count('*')
+    aggregation_logic: COUNT(*)
+    groupby_columns:
+    - property_id
+    - engagement_date
+    aggregation_level: daily
+- name: unique_user_views
+  type: BIGINT
+  nullable: false
+  description: 'Number of distinct users who viewed this property on this date. Business:
+    Unique audience reach metric for property visibility and user interest. Lower
+    than view_count indicates users  viewed property multiple times (comparison shopping
+    behavior). Used for reach vs frequency analysis. Technical: COUNT(DISTINCT user_id)
+    from page_views, subset of view_count.
+
+    '
+  lineage:
+    bronze_table: bronze_page_views
+    bronze_column: user_id
+    silver_table: silver_page_views
+    silver_column: user_id
+    transformation: AGGREGATE_COUNT
+    transformation_logic: countDistinct('user_id')
+    aggregation_logic: COUNT(DISTINCT user_id)
+    groupby_columns:
+    - property_id
+    - engagement_date
+    aggregation_level: daily
+- name: click_count
+  type: BIGINT
+  nullable: false
+  description: 'Total number of clicks on property elements (photos, amenities, availability).
+    Business: Mid-funnel engagement metric indicating user interest beyond passive
+    viewing. Used for click-through rate calculations,  engagement quality assessment,
+    and listing optimization. Higher clicks indicate compelling listing content. Technical:
+    COUNT(event WHERE event=''click'') from clickstream events.
+
+    '
+  lineage:
+    bronze_table: bronze_clickstream
+    bronze_column: event_id
+    silver_table: silver_clickstream
+    silver_column: event_id
+    transformation: AGGREGATE_COUNT_CONDITIONAL
+    transformation_logic: spark_sum(when(col('event_type') == 'click', 1).otherwise(0))
+    aggregation_logic: SUM(CASE WHEN event_type = 'click' THEN 1 ELSE 0 END)
+    groupby_columns:
+    - property_id
+    - engagement_date
+    aggregation_level: daily
+- name: search_count
+  type: BIGINT
+  nullable: false
+  description: 'Number of times property appeared in search results and was viewed.
+    Business: Search visibility metric for SEO effectiveness, search ranking performance,
+    and discoverability analysis.  Used to understand how users find this property.
+    Enables search-to-booking conversion funnel analysis. Technical: COUNT(event WHERE
+    event=''search'') from clickstream events.
+
+    '
+  lineage:
+    bronze_table: bronze_clickstream
+    bronze_column: event_id
+    silver_table: silver_clickstream
+    silver_column: event_id
+    transformation: AGGREGATE_COUNT_CONDITIONAL
+    transformation_logic: spark_sum(when(col('event_type') == 'search', 1).otherwise(0))
+    aggregation_logic: SUM(CASE WHEN event_type = 'search' THEN 1 ELSE 0 END)
+    groupby_columns:
+    - property_id
+    - engagement_date
+    aggregation_level: daily
+- name: conversion_rate
+  type: DECIMAL(5,2)
+  nullable: false
+  description: 'Property conversion rate: bookings divided by views (percentage).
+    Business: Bottom-of-funnel conversion metric (0-100 scale) showing how effectively
+    views convert to bookings.  Primary metric for listing optimization, pricing effectiveness,
+    and property competitiveness. Low conversion rates indicate  pricing, listing
+    quality, or availability issues. Industry benchmark typically 2-5%. Technical:
+    (booking_count_for_date / NULLIF(view_count, 0)) * 100, calculated by joining
+    with fact_booking_daily.  Precision to 2 decimal places for percentage display.
+
+    '
+  lineage:
+    bronze_table: N/A (derived from fact_booking_daily)
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: DERIVED_CALCULATION
+    transformation_logic: (bookings_count / NULLIF(view_count, 0)) * 100
+    depends_on:
+    - view_count
+    - booking_count from fact_booking_daily
+    notes: Calculated by joining with fact_booking_daily
+- name: avg_time_on_page
+  type: DECIMAL(10,2)
+  nullable: true
+  description: 'Average time spent viewing property page in seconds. Business: Engagement
+    depth metric indicating listing content quality and user interest. Longer time
+    indicates compelling content,  photos, and amenities. NULL for dates with no measurable
+    time data (bounces, quick exits).  Used for listing quality assessment and A/B
+    testing. Technical: AVG(time_spent_seconds) from page_views where time_spent_seconds
+    IS NOT NULL.  Precision to 2 decimal places for seconds, NULL if no time data
+    available.
+
+    '
+  lineage:
+    bronze_table: bronze_page_views
+    bronze_column: time_spent_seconds
+    silver_table: silver_page_views
+    silver_column: time_spent_seconds
+    transformation: AGGREGATE_AVG
+    transformation_logic: avg('time_spent_seconds')
+    aggregation_logic: AVG(time_spent_seconds)
+    groupby_columns:
+    - property_id
+    - engagement_date
+    aggregation_level: daily
+    notes: NULL values excluded from average
+- name: record_created_timestamp
+  type: TIMESTAMP
+  nullable: false
+  description: 'Timestamp when this daily engagement aggregate was first created in
+    Gold layer. Business: Audit field for data lineage, troubleshooting, and understanding
+    when engagement metrics became available. Technical: Set once at INSERT time during
+    MERGE operation, remains constant even if aggregates updated.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: current_timestamp()
+    notes: Generated during Gold MERGE INSERT, never updated
+- name: record_updated_timestamp
+  type: TIMESTAMP
+  nullable: false
+  description: 'Timestamp when this daily engagement aggregate was last refreshed.
+    Business: Shows data freshness for engagement metrics. Useful for validating late-arriving
+    clickstream events were included. Technical: Updated on every MERGE operation
+    that recalculates aggregates for this property-date.
+
+    '
+  lineage:
+    bronze_table: N/A
+    bronze_column: N/A
+    silver_table: N/A
+    silver_column: N/A
+    transformation: GENERATED
+    transformation_logic: current_timestamp()
+    notes: Updated on every MERGE operation
+table_properties:
+  contains_pii: false
+  data_classification: internal
+  business_owner: Marketing & Growth
+  technical_owner: Data Engineering
+  update_frequency: Daily
+  aggregation_level: daily

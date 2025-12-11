@@ -1,0 +1,77 @@
+# Wanderbricks - Unity Catalog Schema Definitions
+# Creates schemas for Bronze, Silver, and Gold layers with governance metadata
+
+resources:
+  schemas:
+    bronze_schema:
+      name: ${var.bronze_schema}
+      catalog_name: ${var.catalog}
+      comment: "Bronze layer - raw data ingestion from Wanderbricks vacation rental platform with minimal transformation. Contains bookings, properties, users, hosts, destinations, and engagement data."
+      properties:
+        # Performance
+        delta.autoOptimize.optimizeWrite: "true"
+        delta.autoOptimize.autoCompact: "true"
+        databricks.pipelines.predictiveOptimizations.enabled: "true"
+        
+        # Governance
+        layer: "bronze"
+        source_system: "wanderbricks_app"
+        data_classification: "confidential"
+        business_owner: "Product Engineering"
+        technical_owner: "Data Engineering"
+        
+        # Lifecycle
+        retention_period: "2_years"
+        backup_enabled: "true"
+    
+    silver_schema:
+      name: ${var.silver_schema}
+      catalog_name: ${var.catalog}
+      comment: "Silver layer - validated, cleaned, and quality-checked data with Delta Live Tables expectations. Includes quarantine tables for data quality failures and comprehensive monitoring views."
+      properties:
+        # Performance
+        delta.autoOptimize.optimizeWrite: "true"
+        delta.autoOptimize.autoCompact: "true"
+        databricks.pipelines.predictiveOptimizations.enabled: "true"
+        
+        # Governance
+        layer: "silver"
+        source_layer: "bronze"
+        data_classification: "confidential"
+        business_owner: "Data Analytics"
+        technical_owner: "Data Engineering"
+        
+        # Quality
+        dq_framework: "dlt_expectations"
+        dq_rules_table: "dq_rules"
+        
+        # Lifecycle
+        retention_period: "3_years"
+        backup_enabled: "true"
+    
+    gold_schema:
+      name: ${var.gold_schema}
+      catalog_name: ${var.catalog}
+      comment: "Gold layer - business-ready aggregates, analytics datasets, and semantic models optimized for BI, reporting, and AI/BI consumption via Genie Spaces."
+      properties:
+        # Performance
+        delta.autoOptimize.optimizeWrite: "true"
+        delta.autoOptimize.autoCompact: "true"
+        databricks.pipelines.predictiveOptimizations.enabled: "true"
+        
+        # Governance
+        layer: "gold"
+        source_layer: "silver"
+        data_classification: "internal"
+        business_owner: "Business Intelligence"
+        technical_owner: "Data Engineering"
+        
+        # Semantic Layer
+        has_metric_views: "true"
+        has_tvfs: "true"
+        genie_ready: "true"
+        
+        # Lifecycle
+        retention_period: "5_years"
+        backup_enabled: "true"
+

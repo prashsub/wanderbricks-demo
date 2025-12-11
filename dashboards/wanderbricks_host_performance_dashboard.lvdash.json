@@ -1,0 +1,513 @@
+{
+  "datasets": [
+    {
+      "name": "host_kpis",
+      "displayName": "Host KPIs",
+      "query": "SELECT COUNT(DISTINCT host_id) as total_hosts, SUM(CASE WHEN is_verified THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as verified_pct, AVG(rating) as avg_rating, SUM(CASE WHEN is_active THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as active_pct FROM ${catalog}.${gold_schema}.dim_host WHERE is_current = true"
+    },
+    {
+      "name": "host_rating_distribution",
+      "displayName": "Host Rating Distribution",
+      "query": "SELECT FLOOR(rating * 2) / 2 as rating_bucket, COUNT(*) as host_count FROM ${catalog}.${gold_schema}.dim_host WHERE is_current = true AND is_active = true AND rating IS NOT NULL GROUP BY 1 ORDER BY 1"
+    },
+    {
+      "name": "verification_impact",
+      "displayName": "Verification Impact",
+      "query": "SELECT CASE WHEN h.is_verified THEN 'Verified' ELSE 'Not Verified' END as status, COUNT(DISTINCT h.host_id) as host_count, AVG(h.rating) as avg_rating, COALESCE(SUM(f.total_amount) / NULLIF(COUNT(DISTINCT h.host_id), 0), 0) as revenue_per_host FROM ${catalog}.${gold_schema}.dim_host h LEFT JOIN ${catalog}.${gold_schema}.dim_property p ON h.host_id = p.host_id AND p.is_current = true LEFT JOIN ${catalog}.${gold_schema}.fact_booking_detail f ON p.property_id = f.property_id AND f.check_in_date >= :start_date AND f.check_in_date <= :end_date WHERE h.is_current = true GROUP BY 1"
+    },
+    {
+      "name": "top_hosts_by_revenue",
+      "displayName": "Top Hosts by Revenue",
+      "query": "SELECT h.host_id, h.name, h.country, h.rating, h.is_verified, COUNT(DISTINCT p.property_id) as property_count, COUNT(DISTINCT f.booking_id) as booking_count, SUM(f.total_amount) as total_revenue FROM ${catalog}.${gold_schema}.dim_host h JOIN ${catalog}.${gold_schema}.dim_property p ON h.host_id = p.host_id AND p.is_current = true LEFT JOIN ${catalog}.${gold_schema}.fact_booking_detail f ON p.property_id = f.property_id AND f.check_in_date >= :start_date AND f.check_in_date <= :end_date WHERE h.is_current = true GROUP BY 1, 2, 3, 4, 5 ORDER BY 8 DESC LIMIT 20"
+    },
+    {
+      "name": "top_hosts_by_rating",
+      "displayName": "Top Hosts by Rating",
+      "query": "SELECT h.host_id, h.name, h.country, h.rating, h.is_verified, COUNT(DISTINCT p.property_id) as property_count, COUNT(DISTINCT f.booking_id) as booking_count FROM ${catalog}.${gold_schema}.dim_host h JOIN ${catalog}.${gold_schema}.dim_property p ON h.host_id = p.host_id AND p.is_current = true LEFT JOIN ${catalog}.${gold_schema}.fact_booking_detail f ON p.property_id = f.property_id AND f.check_in_date >= :start_date AND f.check_in_date <= :end_date WHERE h.is_current = true AND h.is_active = true AND h.rating IS NOT NULL GROUP BY 1, 2, 3, 4, 5 HAVING COUNT(DISTINCT f.booking_id) >= 5 ORDER BY 4 DESC LIMIT 20"
+    },
+    {
+      "name": "hosts_by_country",
+      "displayName": "Hosts by Country",
+      "query": "SELECT country, COUNT(DISTINCT host_id) as host_count, AVG(rating) as avg_rating, SUM(CASE WHEN is_verified THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as verified_pct FROM ${catalog}.${gold_schema}.dim_host WHERE is_current = true AND is_active = true GROUP BY 1 ORDER BY 2 DESC LIMIT 15"
+    },
+    {
+      "name": "multi_property_hosts",
+      "displayName": "Multi-Property Hosts",
+      "query": "SELECT h.host_id, h.name, h.country, h.rating, h.is_verified, COUNT(DISTINCT p.property_id) as property_count, COALESCE(SUM(f.total_amount), 0) as total_revenue FROM ${catalog}.${gold_schema}.dim_host h JOIN ${catalog}.${gold_schema}.dim_property p ON h.host_id = p.host_id AND p.is_current = true LEFT JOIN ${catalog}.${gold_schema}.fact_booking_detail f ON p.property_id = f.property_id AND f.check_in_date >= :start_date AND f.check_in_date <= :end_date WHERE h.is_current = true GROUP BY 1, 2, 3, 4, 5 HAVING COUNT(DISTINCT p.property_id) > 1 ORDER BY 6 DESC LIMIT 20"
+    },
+    {
+      "name": "country_filter_values",
+      "displayName": "Country Filter Values",
+      "query": "SELECT 'All' as country UNION ALL SELECT DISTINCT country FROM ${catalog}.${gold_schema}.dim_host WHERE is_current = true ORDER BY country"
+    }
+  ],
+  
+  "pages": [
+    {
+      "name": "page_host_overview",
+      "displayName": "Host Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "kpi_total_hosts",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "host_kpis",
+                  "fields": [
+                    {"name": "total_hosts", "expression": "`total_hosts`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_hosts"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Hosts",
+                "showDescription": true,
+                "description": "Number of active hosts"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_verified_pct",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "host_kpis",
+                  "fields": [
+                    {"name": "verified_pct", "expression": "`verified_pct`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "verified_pct"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Verified %",
+                "showDescription": true,
+                "description": "Percentage of verified hosts"
+              }
+            }
+          },
+          "position": {"x": 2, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_avg_rating",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "host_kpis",
+                  "fields": [
+                    {"name": "avg_rating", "expression": "`avg_rating`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_rating"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Rating",
+                "showDescription": true,
+                "description": "Average host rating"
+              }
+            }
+          },
+          "position": {"x": 4, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "chart_rating_distribution",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "host_rating_distribution",
+                  "fields": [
+                    {"name": "rating_bucket", "expression": "`rating_bucket`"},
+                    {"name": "host_count", "expression": "`host_count`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "rating_bucket",
+                  "displayName": "Rating",
+                  "scale": {"type": "quantitative"}
+                },
+                "y": {
+                  "fieldName": "host_count",
+                  "displayName": "Host Count",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Host Rating Distribution",
+                "showDescription": true,
+                "description": "Distribution of host ratings"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 2, "width": 3, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "chart_hosts_by_country",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "hosts_by_country",
+                  "fields": [
+                    {"name": "country", "expression": "`country`"},
+                    {"name": "host_count", "expression": "`host_count`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "country",
+                  "displayName": "Country",
+                  "scale": {"type": "categorical"}
+                },
+                "y": {
+                  "fieldName": "host_count",
+                  "displayName": "Host Count",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Geographic Distribution",
+                "showDescription": true,
+                "description": "Hosts by country"
+              }
+            }
+          },
+          "position": {"x": 3, "y": 2, "width": 3, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_performance_ranking",
+      "displayName": "Performance Ranking",
+      "layout": [
+        {
+          "widget": {
+            "name": "table_top_hosts_revenue",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_hosts_by_revenue",
+                  "fields": [
+                    {"name": "name", "expression": "`name`"},
+                    {"name": "country", "expression": "`country`"},
+                    {"name": "rating", "expression": "`rating`"},
+                    {"name": "is_verified", "expression": "`is_verified`"},
+                    {"name": "property_count", "expression": "`property_count`"},
+                    {"name": "booking_count", "expression": "`booking_count`"},
+                    {"name": "total_revenue", "expression": "`total_revenue`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "name", "title": "Host Name"},
+                  {"fieldName": "country", "title": "Country"},
+                  {"fieldName": "rating", "title": "Rating", "type": "number"},
+                  {"fieldName": "is_verified", "title": "Verified"},
+                  {"fieldName": "property_count", "title": "Properties"},
+                  {"fieldName": "booking_count", "title": "Bookings"},
+                  {"fieldName": "total_revenue", "title": "Revenue", "type": "number"}
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Top Hosts by Revenue",
+                "showDescription": true,
+                "description": "Highest earning hosts"
+              },
+              "itemsPerPage": 20,
+              "condensed": true,
+              "withRowNumber": true
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 6, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "table_top_hosts_rating",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_hosts_by_rating",
+                  "fields": [
+                    {"name": "name", "expression": "`name`"},
+                    {"name": "country", "expression": "`country`"},
+                    {"name": "rating", "expression": "`rating`"},
+                    {"name": "is_verified", "expression": "`is_verified`"},
+                    {"name": "property_count", "expression": "`property_count`"},
+                    {"name": "booking_count", "expression": "`booking_count`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "name", "title": "Host Name"},
+                  {"fieldName": "country", "title": "Country"},
+                  {"fieldName": "rating", "title": "Rating", "type": "number"},
+                  {"fieldName": "is_verified", "title": "Verified"},
+                  {"fieldName": "property_count", "title": "Properties"},
+                  {"fieldName": "booking_count", "title": "Bookings"}
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Top Hosts by Rating",
+                "showDescription": true,
+                "description": "Highest rated hosts (min 5 bookings)"
+              },
+              "itemsPerPage": 20,
+              "condensed": true,
+              "withRowNumber": true
+            }
+          },
+          "position": {"x": 0, "y": 6, "width": 6, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_quality_analysis",
+      "displayName": "Quality Analysis",
+      "layout": [
+        {
+          "widget": {
+            "name": "table_verification_impact",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "verification_impact",
+                  "fields": [
+                    {"name": "status", "expression": "`status`"},
+                    {"name": "host_count", "expression": "`host_count`"},
+                    {"name": "avg_rating", "expression": "`avg_rating`"},
+                    {"name": "revenue_per_host", "expression": "`revenue_per_host`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "status", "title": "Status"},
+                  {"fieldName": "host_count", "title": "Host Count"},
+                  {"fieldName": "avg_rating", "title": "Avg Rating", "type": "number"},
+                  {"fieldName": "revenue_per_host", "title": "Revenue per Host", "type": "number"}
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Verification Impact",
+                "showDescription": true,
+                "description": "Comparison of verified vs non-verified hosts"
+              },
+              "itemsPerPage": 10,
+              "condensed": true,
+              "withRowNumber": false
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 6, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "table_multi_property_hosts",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "multi_property_hosts",
+                  "fields": [
+                    {"name": "name", "expression": "`name`"},
+                    {"name": "country", "expression": "`country`"},
+                    {"name": "rating", "expression": "`rating`"},
+                    {"name": "is_verified", "expression": "`is_verified`"},
+                    {"name": "property_count", "expression": "`property_count`"},
+                    {"name": "total_revenue", "expression": "`total_revenue`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "name", "title": "Host Name"},
+                  {"fieldName": "country", "title": "Country"},
+                  {"fieldName": "rating", "title": "Rating", "type": "number"},
+                  {"fieldName": "is_verified", "title": "Verified"},
+                  {"fieldName": "property_count", "title": "Properties"},
+                  {"fieldName": "total_revenue", "title": "Revenue", "type": "number"}
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Multi-Property Hosts",
+                "showDescription": true,
+                "description": "Hosts with multiple properties"
+              },
+              "itemsPerPage": 20,
+              "condensed": true,
+              "withRowNumber": true
+            }
+          },
+          "position": {"x": 0, "y": 6, "width": 6, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_global_filters",
+      "displayName": "Global Filters",
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layout": [
+        {
+          "widget": {
+            "name": "filter_country",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "country_filter_values",
+                  "fields": [
+                    {"name": "country", "expression": "`country`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "displayName": "Country",
+                    "fieldName": "country",
+                    "queryName": "main_query"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Country"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 2, "height": 2}
+        }
+      ]
+    }
+  ],
+  
+  "parameters": [
+    {
+      "displayName": "Start Date",
+      "keyword": "start_date",
+      "dataType": "DATE",
+      "defaultSelection": {
+        "values": {
+          "dataType": "DATE",
+          "values": [{"value": "2024-01-01"}]
+        }
+      }
+    },
+    {
+      "displayName": "End Date",
+      "keyword": "end_date",
+      "dataType": "DATE",
+      "defaultSelection": {
+        "values": {
+          "dataType": "DATE",
+          "values": [{"value": "2024-12-31"}]
+        }
+      }
+    }
+  ],
+  
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {"light": "#F7F9FA", "dark": "#0B0E11"},
+      "widgetBackgroundColor": {"light": "#FFFFFF", "dark": "#1A1D21"},
+      "widgetBorderColor": {"light": "#E0E4E8", "dark": "#2A2E33"},
+      "fontColor": {"light": "#11171C", "dark": "#E8ECF0"},
+      "selectionColor": {"light": "#077A9D", "dark": "#8ACAE7"},
+      "visualizationColors": [
+        "#077A9D", "#00A972", "#FFAB00", "#FF3621",
+        "#8BCAE7", "#99DDB4", "#FCA4A1", "#AB4057",
+        "#6B4FBB", "#BF7080"
+      ],
+      "widgetHeaderAlignment": "LEFT"
+    },
+    "genieSpace": {"isEnabled": false}
+  }
+}
+

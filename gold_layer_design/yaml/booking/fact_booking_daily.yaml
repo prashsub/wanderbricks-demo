@@ -1,0 +1,291 @@
+# Table metadata
+table_name: fact_booking_daily
+domain: booking
+bronze_source: bookings, payments (aggregated from fact_booking_detail)
+
+# Table description
+description: >
+  Gold layer daily aggregated booking fact table with pre-calculated KPIs at property-date grain for fast dashboard queries.
+  Business: Primary source for dashboard KPIs, executive reporting, and high-level booking performance analysis. Pre-aggregated metrics 
+  eliminate need for transaction-level scans, enabling sub-second dashboard response times. Used for property performance dashboards, 
+  destination market analysis, and daily operational reporting. Aggregates booking counts, revenue, guest counts, and booking outcomes 
+  by property and check-in date. Ideal for time-series visualization and trend analysis.
+  Technical: Grain is one row per property per check-in date (daily aggregate). Derived from fact_booking_detail or directly from Silver 
+  via aggregation query. Updates via Delta MERGE with additive aggregations. Composite primary key (property_id, check_in_date).
+
+# Grain definition
+grain: "One row per property_id per check_in_date (daily aggregate)"
+
+# Primary key definition
+primary_key:
+  columns: ['property_id', 'check_in_date']
+  composite: true
+
+# Foreign key definitions
+foreign_keys:
+  - columns: ['property_id']
+    references: dim_property(property_id)
+    nullable: false
+  - columns: ['destination_id']
+    references: dim_destination(destination_id)
+    nullable: false
+  - columns: ['check_in_date']
+    references: dim_date(date)
+    nullable: false
+
+# Column definitions
+columns:
+  # Composite Primary Key / Foreign Keys
+  - name: property_id
+    type: BIGINT
+    nullable: false
+    description: >
+      Property identifier (part of composite primary key).
+      Business: Links to dim_property for property attributes, host information, and pricing details. 
+      Groups all bookings for this property on this date.
+      Technical: FK to dim_property.property_id (business key). Part of composite PK (property_id, check_in_date).
+    lineage:
+      bronze_table: bronze_booking_fact
+      bronze_column: property_id
+      silver_table: silver_booking_fact
+      silver_column: property_id
+      transformation: "DIRECT_COPY"
+      transformation_logic: "col('property_id')"
+      groupby_columns: ['property_id', 'check_in_date']
+      notes: "Part of daily aggregation grain"
+  
+  - name: destination_id
+    type: BIGINT
+    nullable: false
+    description: >
+      Destination identifier for geographic market aggregation.
+      Business: Links to dim_destination for geographic market analysis. Denormalized from dim_property for query performance, 
+      enables fast destination-level rollups without joining property dimension.
+      Technical: FK to dim_destination.destination_id. Denormalized for performance.
+    lineage:
+      bronze_table: bronze_property_dim
+      bronze_column: destination_id
+      silver_table: silver_booking_fact (joined from dim_property)
+      silver_column: destination_id
+      transformation: "LOOKUP"
+      transformation_logic: "Retrieved via join with dim_property on property_id"
+      notes: "Denormalized from dimension for performance"
+  
+  - name: check_in_date
+    type: DATE
+    nullable: false
+    description: >
+      Check-in date (part of composite primary key).
+      Business: Links to dim_date for time-based analysis and trending. Groups all bookings checking in on this date. 
+      Primary date dimension for occupancy calculations and daily trends.
+      Technical: FK to dim_date.date. Part of composite PK (property_id, check_in_date).
+    lineage:
+      bronze_table: bronze_booking_fact
+      bronze_column: check_in_timestamp
+      silver_table: silver_booking_fact
+      silver_column: check_in_timestamp
+      transformation: "DATE_TRUNC"
+      transformation_logic: "date_trunc('day', col('check_in_timestamp')).cast('date')"
+      groupby_columns: ['property_id', 'check_in_date']
+      notes: "Part of daily aggregation grain, truncated from timestamp"
+  
+  # Booking Count Measures
+  - name: booking_count
+    type: BIGINT
+    nullable: false
+    description: >
+      Total number of bookings checking in on this date.
+      Business: Primary volume metric for property occupancy, booking velocity, and demand tracking. Count of all bookings 
+      regardless of status (includes cancelled). Use with confirmed_booking_count to calculate booking success rate.
+      Technical: COUNT(booking_id) from fact_booking_detail, grouped by property_id and check_in_date.
+    lineage:
+      bronze_table: bronze_booking_fact
+      bronze_column: booking_id
+      silver_table: silver_booking_fact
+      silver_column: booking_id
+      transformation: "AGGREGATE_COUNT"
+      transformation_logic: "count('*')"
+      aggregation_logic: "count('*')"
+      groupby_columns: ['property_id', 'check_in_date']
+      aggregation_level: "daily"
+  
+  - name: confirmed_booking_count
+    type: BIGINT
+    nullable: false
+    description: >
+      Number of confirmed bookings (excludes cancelled/pending).
+      Business: Count of successful bookings that actually generated revenue. Used for occupancy rate calculations, 
+      revenue-generating booking tracking, and booking conversion metrics.
+      Technical: COUNT(booking_id WHERE status='confirmed'), subset of booking_count.
+    lineage:
+      bronze_table: bronze_booking_fact
+      bronze_column: booking_id, status
+      silver_table: silver_booking_fact
+      silver_column: booking_id, status
+      transformation: "AGGREGATE_COUNT_CONDITIONAL"
+      transformation_logic: "spark_sum(when(col('status') == 'confirmed', 1).otherwise(0))"
+      aggregation_logic: "SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END)"
+      groupby_columns: ['property_id', 'check_in_date']
+      aggregation_level: "daily"
+  
+  - name: cancellation_count
+    type: BIGINT
+    nullable: false
+    description: >
+      Number of cancelled bookings for cancellation rate analysis.
+      Business: Count of bookings cancelled for this property-date. Used for cancellation rate calculations, 
+      cancellation pattern analysis, and policy effectiveness studies. High cancellation rates indicate pricing or listing issues.
+      Technical: COUNT(booking_id WHERE status='cancelled'), subset of booking_count.
+    lineage:
+      bronze_table: bronze_booking_fact
+      bronze_column: booking_id, status
+      silver_table: silver_booking_fact
+      silver_column: booking_id, status
+      transformation: "AGGREGATE_COUNT_CONDITIONAL"
+      transformation_logic: "spark_sum(when(col('status') == 'cancelled', 1).otherwise(0))"
+      aggregation_logic: "SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END)"
+      groupby_columns: ['property_id', 'check_in_date']
+      aggregation_level: "daily"
+  
+  # Revenue Measures
+  - name: total_booking_value
+    type: DECIMAL(18,2)
+    nullable: false
+    description: >
+      Total revenue from all bookings on this date.
+      Business: Sum of all booking amounts regardless of status (includes cancelled bookings that were charged cancellation fees). 
+      Primary revenue metric for financial reporting, revenue trends, and property performance analysis.
+      Technical: SUM(total_amount) from fact_booking_detail, precision to 2 decimal places for currency.
+    lineage:
+      bronze_table: bronze_booking_fact
+      bronze_column: total_amount
+      silver_table: silver_booking_fact
+      silver_column: total_amount
+      transformation: "AGGREGATE_SUM"
+      transformation_logic: "spark_sum('total_amount')"
+      aggregation_logic: "SUM(total_amount)"
+      groupby_columns: ['property_id', 'check_in_date']
+      aggregation_level: "daily"
+  
+  - name: avg_booking_value
+    type: DECIMAL(18,2)
+    nullable: false
+    description: >
+      Average booking value per booking on this date.
+      Business: Average revenue per booking for pricing analysis, revenue per booking trends, and comparison across properties. 
+      Calculated as total_booking_value / booking_count. Useful for identifying high-value properties.
+      Technical: AVG(total_amount) or total_booking_value / booking_count, pre-calculated for query performance.
+    lineage:
+      bronze_table: bronze_booking_fact
+      bronze_column: total_amount
+      silver_table: silver_booking_fact
+      silver_column: total_amount
+      transformation: "AGGREGATE_AVG"
+      transformation_logic: "avg('total_amount')"
+      aggregation_logic: "AVG(total_amount)"
+      groupby_columns: ['property_id', 'check_in_date']
+      aggregation_level: "daily"
+  
+  # Guest Count Measures
+  - name: total_guests
+    type: BIGINT
+    nullable: false
+    description: >
+      Total number of guests checking in on this date.
+      Business: Sum of all guests for occupancy planning, capacity utilization, and guest count distribution analysis. 
+      Used for operational staffing and guest services planning.
+      Technical: SUM(guests_count) from fact_booking_detail.
+    lineage:
+      bronze_table: bronze_booking_fact
+      bronze_column: guests_count
+      silver_table: silver_booking_fact
+      silver_column: guests_count
+      transformation: "AGGREGATE_SUM"
+      transformation_logic: "spark_sum('guests_count')"
+      aggregation_logic: "SUM(guests_count)"
+      groupby_columns: ['property_id', 'check_in_date']
+      aggregation_level: "daily"
+  
+  - name: avg_nights_booked
+    type: DECIMAL(10,2)
+    nullable: false
+    description: >
+      Average length of stay in nights for bookings on this date.
+      Business: Average nights per booking for length-of-stay analysis, pricing strategies (longer stays often get discounts), 
+      and booking pattern studies. Longer stays indicate leisure travel, shorter stays indicate business/quick trips.
+      Technical: AVG(nights_booked) from fact_booking_detail, precision to 2 decimal places.
+    lineage:
+      bronze_table: bronze_booking_fact
+      bronze_column: nights_booked
+      silver_table: silver_booking_fact
+      silver_column: nights_booked
+      transformation: "AGGREGATE_AVG"
+      transformation_logic: "avg('nights_booked')"
+      aggregation_logic: "AVG(nights_booked)"
+      groupby_columns: ['property_id', 'check_in_date']
+      aggregation_level: "daily"
+  
+  # Payment Success Rate
+  - name: payment_completion_rate
+    type: DECIMAL(5,2)
+    nullable: false
+    description: >
+      Percentage of bookings with successful payment completion.
+      Business: Payment success rate metric (0-100 scale) for payment processing quality, payment method effectiveness, 
+      and revenue collection analysis. Low rates indicate payment issues requiring investigation.
+      Technical: (COUNT(booking_id WHERE payment_amount IS NOT NULL) / COUNT(booking_id)) * 100, 
+      precision to 2 decimal places for percentage display.
+    lineage:
+      bronze_table: bronze_payment_fact
+      bronze_column: payment_amount
+      silver_table: silver_booking_fact (joined from payment_fact)
+      silver_column: payment_amount
+      transformation: "DERIVED_CALCULATION"
+      transformation_logic: "(spark_sum(when(col('payment_amount').isNotNull(), 1).otherwise(0)) / count('*') * 100)"
+      aggregation_logic: "(SUM(CASE WHEN payment_amount IS NOT NULL THEN 1 ELSE 0 END) / COUNT(*)) * 100"
+      groupby_columns: ['property_id', 'check_in_date']
+      aggregation_level: "daily"
+      notes: "Percentage calculation based on payment completion"
+  
+  # Audit Columns
+  - name: record_created_timestamp
+    type: TIMESTAMP
+    nullable: false
+    description: >
+      Timestamp when this daily aggregate was first created in Gold layer.
+      Business: Audit field for data lineage, troubleshooting, and understanding when this date's data became available.
+      Technical: Set once at INSERT time during MERGE operation, remains constant even if aggregates updated.
+    lineage:
+      bronze_table: N/A
+      bronze_column: N/A
+      silver_table: N/A
+      silver_column: N/A
+      transformation: "GENERATED"
+      transformation_logic: "current_timestamp()"
+      notes: "Generated during Gold MERGE INSERT, never updated"
+  
+  - name: record_updated_timestamp
+    type: TIMESTAMP
+    nullable: false
+    description: >
+      Timestamp when this daily aggregate was last refreshed.
+      Business: Shows data freshness for this property-date. Useful for validating late-arriving bookings were included in aggregates.
+      Technical: Updated on every MERGE operation that recalculates aggregates for this property-date.
+    lineage:
+      bronze_table: N/A
+      bronze_column: N/A
+      silver_table: N/A
+      silver_column: N/A
+      transformation: "GENERATED"
+      transformation_logic: "current_timestamp()"
+      notes: "Updated on every MERGE operation"
+
+# Table properties
+table_properties:
+  contains_pii: false
+  data_classification: internal
+  business_owner: Revenue Management
+  technical_owner: Data Engineering
+  update_frequency: Daily
+  aggregation_level: daily
+

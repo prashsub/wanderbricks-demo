@@ -1,0 +1,513 @@
+{
+  "datasets": [
+    {
+      "name": "portfolio_kpis",
+      "displayName": "Portfolio KPIs",
+      "query": "SELECT COUNT(DISTINCT property_id) as property_count, SUM(max_guests) as total_capacity, AVG(base_price) as avg_price FROM ${catalog}.${gold_schema}.dim_property WHERE is_current = true"
+    },
+    {
+      "name": "properties_by_destination",
+      "displayName": "Properties by Destination",
+      "query": "SELECT d.destination, d.country, COUNT(DISTINCT p.property_id) as property_count, AVG(p.base_price) as avg_price FROM ${catalog}.${gold_schema}.dim_property p JOIN ${catalog}.${gold_schema}.dim_destination d ON p.destination_id = d.destination_id WHERE p.is_current = true GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 15"
+    },
+    {
+      "name": "price_distribution",
+      "displayName": "Price Distribution",
+      "query": "SELECT CASE WHEN base_price < 100 THEN '$0-100' WHEN base_price < 200 THEN '$100-200' WHEN base_price < 300 THEN '$200-300' WHEN base_price < 500 THEN '$300-500' ELSE '$500+' END as price_bucket, COUNT(*) as property_count FROM ${catalog}.${gold_schema}.dim_property WHERE is_current = true GROUP BY 1 ORDER BY 2 DESC"
+    },
+    {
+      "name": "property_type_distribution",
+      "displayName": "Property Type Distribution",
+      "query": "SELECT property_type, COUNT(*) as property_count, AVG(base_price) as avg_price, AVG(bedrooms) as avg_bedrooms FROM ${catalog}.${gold_schema}.dim_property WHERE is_current = true GROUP BY 1 ORDER BY 2 DESC"
+    },
+    {
+      "name": "top_performing_properties",
+      "displayName": "Top Performing Properties",
+      "query": "SELECT p.property_id, p.title, d.destination, p.property_type, p.base_price, COUNT(DISTINCT f.booking_id) as booking_count, SUM(f.total_amount) as total_revenue FROM ${catalog}.${gold_schema}.dim_property p JOIN ${catalog}.${gold_schema}.dim_destination d ON p.destination_id = d.destination_id LEFT JOIN ${catalog}.${gold_schema}.fact_booking_detail f ON p.property_id = f.property_id AND f.check_in_date >= :start_date AND f.check_in_date <= :end_date WHERE p.is_current = true GROUP BY 1, 2, 3, 4, 5 ORDER BY 7 DESC LIMIT 20"
+    },
+    {
+      "name": "bottom_performing_properties",
+      "displayName": "Bottom Performing Properties",
+      "query": "SELECT p.property_id, p.title, d.destination, p.property_type, p.base_price, COALESCE(COUNT(DISTINCT f.booking_id), 0) as booking_count, COALESCE(SUM(f.total_amount), 0) as total_revenue FROM ${catalog}.${gold_schema}.dim_property p JOIN ${catalog}.${gold_schema}.dim_destination d ON p.destination_id = d.destination_id LEFT JOIN ${catalog}.${gold_schema}.fact_booking_detail f ON p.property_id = f.property_id AND f.check_in_date >= :start_date AND f.check_in_date <= :end_date WHERE p.is_current = true GROUP BY 1, 2, 3, 4, 5 HAVING COALESCE(COUNT(DISTINCT f.booking_id), 0) <= 5 ORDER BY 7 ASC LIMIT 20"
+    },
+    {
+      "name": "price_vs_performance",
+      "displayName": "Price vs Performance",
+      "query": "SELECT p.property_id, p.title, p.base_price, p.property_type, COALESCE(SUM(f.total_amount), 0) as total_revenue, COALESCE(COUNT(DISTINCT f.booking_id), 0) as booking_count FROM ${catalog}.${gold_schema}.dim_property p LEFT JOIN ${catalog}.${gold_schema}.fact_booking_detail f ON p.property_id = f.property_id AND f.check_in_date >= :start_date AND f.check_in_date <= :end_date WHERE p.is_current = true GROUP BY 1, 2, 3, 4 LIMIT 100"
+    },
+    {
+      "name": "property_amenities_analysis",
+      "displayName": "Property Amenities Analysis",
+      "query": "SELECT bedrooms, bathrooms, COUNT(*) as property_count, AVG(base_price) as avg_price, AVG(max_guests) as avg_capacity FROM ${catalog}.${gold_schema}.dim_property WHERE is_current = true GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 20"
+    },
+    {
+      "name": "destination_filter_values",
+      "displayName": "Destination Filter Values",
+      "query": "SELECT 'All' as destination UNION ALL SELECT DISTINCT destination FROM ${catalog}.${gold_schema}.dim_destination ORDER BY destination"
+    }
+  ],
+  
+  "pages": [
+    {
+      "name": "page_portfolio_overview",
+      "displayName": "Portfolio Overview",
+      "layout": [
+        {
+          "widget": {
+            "name": "kpi_property_count",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "portfolio_kpis",
+                  "fields": [
+                    {"name": "property_count", "expression": "`property_count`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "property_count"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Properties",
+                "showDescription": true,
+                "description": "Number of active properties"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_total_capacity",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "portfolio_kpis",
+                  "fields": [
+                    {"name": "total_capacity", "expression": "`total_capacity`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_capacity"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Total Capacity",
+                "showDescription": true,
+                "description": "Sum of max guests across all properties"
+              }
+            }
+          },
+          "position": {"x": 2, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_avg_price",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "portfolio_kpis",
+                  "fields": [
+                    {"name": "avg_price", "expression": "`avg_price`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg_price"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Base Price",
+                "showDescription": true,
+                "description": "Average property base price"
+              }
+            }
+          },
+          "position": {"x": 4, "y": 0, "width": 2, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "chart_properties_by_destination",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "properties_by_destination",
+                  "fields": [
+                    {"name": "destination", "expression": "`destination`"},
+                    {"name": "property_count", "expression": "`property_count`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "destination",
+                  "displayName": "Destination",
+                  "scale": {"type": "categorical"}
+                },
+                "y": {
+                  "fieldName": "property_count",
+                  "displayName": "Property Count",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Geographic Distribution",
+                "showDescription": true,
+                "description": "Properties by destination"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 2, "width": 3, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "chart_property_type_distribution",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "property_type_distribution",
+                  "fields": [
+                    {"name": "property_type", "expression": "`property_type`"},
+                    {"name": "property_count", "expression": "`property_count`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "property_count",
+                  "displayName": "Count",
+                  "scale": {"type": "quantitative"}
+                },
+                "color": {
+                  "fieldName": "property_type",
+                  "displayName": "Property Type",
+                  "scale": {"type": "categorical"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Property Type Distribution",
+                "showDescription": true,
+                "description": "Portfolio composition by property type"
+              }
+            }
+          },
+          "position": {"x": 3, "y": 2, "width": 3, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_pricing_analysis",
+      "displayName": "Pricing Analysis",
+      "layout": [
+        {
+          "widget": {
+            "name": "chart_price_distribution",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "price_distribution",
+                  "fields": [
+                    {"name": "price_bucket", "expression": "`price_bucket`"},
+                    {"name": "property_count", "expression": "`property_count`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "price_bucket",
+                  "displayName": "Price Range",
+                  "scale": {"type": "categorical"}
+                },
+                "y": {
+                  "fieldName": "property_count",
+                  "displayName": "Property Count",
+                  "scale": {"type": "quantitative"}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Price Distribution",
+                "showDescription": true,
+                "description": "Number of properties by price range"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 6, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "table_amenities_analysis",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "property_amenities_analysis",
+                  "fields": [
+                    {"name": "bedrooms", "expression": "`bedrooms`"},
+                    {"name": "bathrooms", "expression": "`bathrooms`"},
+                    {"name": "property_count", "expression": "`property_count`"},
+                    {"name": "avg_price", "expression": "`avg_price`"},
+                    {"name": "avg_capacity", "expression": "`avg_capacity`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "bedrooms", "title": "Bedrooms"},
+                  {"fieldName": "bathrooms", "title": "Bathrooms"},
+                  {"fieldName": "property_count", "title": "Count"},
+                  {"fieldName": "avg_price", "title": "Avg Price", "type": "number"},
+                  {"fieldName": "avg_capacity", "title": "Avg Capacity", "type": "number"}
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Amenities Analysis",
+                "showDescription": true,
+                "description": "Properties by bedroom/bathroom configuration"
+              },
+              "itemsPerPage": 20,
+              "condensed": true,
+              "withRowNumber": true
+            }
+          },
+          "position": {"x": 0, "y": 6, "width": 6, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_performance_ranking",
+      "displayName": "Performance Ranking",
+      "layout": [
+        {
+          "widget": {
+            "name": "table_top_properties",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_performing_properties",
+                  "fields": [
+                    {"name": "title", "expression": "`title`"},
+                    {"name": "destination", "expression": "`destination`"},
+                    {"name": "property_type", "expression": "`property_type`"},
+                    {"name": "base_price", "expression": "`base_price`"},
+                    {"name": "booking_count", "expression": "`booking_count`"},
+                    {"name": "total_revenue", "expression": "`total_revenue`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "title", "title": "Property"},
+                  {"fieldName": "destination", "title": "Destination"},
+                  {"fieldName": "property_type", "title": "Type"},
+                  {"fieldName": "base_price", "title": "Price", "type": "number"},
+                  {"fieldName": "booking_count", "title": "Bookings"},
+                  {"fieldName": "total_revenue", "title": "Revenue", "type": "number"}
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Top Performing Properties",
+                "showDescription": true,
+                "description": "Properties with highest revenue"
+              },
+              "itemsPerPage": 20,
+              "condensed": true,
+              "withRowNumber": true
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 6, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "table_bottom_properties",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "bottom_performing_properties",
+                  "fields": [
+                    {"name": "title", "expression": "`title`"},
+                    {"name": "destination", "expression": "`destination`"},
+                    {"name": "property_type", "expression": "`property_type`"},
+                    {"name": "base_price", "expression": "`base_price`"},
+                    {"name": "booking_count", "expression": "`booking_count`"},
+                    {"name": "total_revenue", "expression": "`total_revenue`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "title", "title": "Property"},
+                  {"fieldName": "destination", "title": "Destination"},
+                  {"fieldName": "property_type", "title": "Type"},
+                  {"fieldName": "base_price", "title": "Price", "type": "number"},
+                  {"fieldName": "booking_count", "title": "Bookings"},
+                  {"fieldName": "total_revenue", "title": "Revenue", "type": "number"}
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Low Performing Properties",
+                "showDescription": true,
+                "description": "Properties needing attention"
+              },
+              "itemsPerPage": 20,
+              "condensed": true,
+              "withRowNumber": true
+            }
+          },
+          "position": {"x": 0, "y": 6, "width": 6, "height": 6}
+        }
+      ]
+    },
+    {
+      "name": "page_global_filters",
+      "displayName": "Global Filters",
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layout": [
+        {
+          "widget": {
+            "name": "filter_destination",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "destination_filter_values",
+                  "fields": [
+                    {"name": "destination", "expression": "`destination`"}
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "displayName": "Destination",
+                    "fieldName": "destination",
+                    "queryName": "main_query"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Destination"
+              }
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 2, "height": 2}
+        }
+      ]
+    }
+  ],
+  
+  "parameters": [
+    {
+      "displayName": "Start Date",
+      "keyword": "start_date",
+      "dataType": "DATE",
+      "defaultSelection": {
+        "values": {
+          "dataType": "DATE",
+          "values": [{"value": "2024-01-01"}]
+        }
+      }
+    },
+    {
+      "displayName": "End Date",
+      "keyword": "end_date",
+      "dataType": "DATE",
+      "defaultSelection": {
+        "values": {
+          "dataType": "DATE",
+          "values": [{"value": "2024-12-31"}]
+        }
+      }
+    }
+  ],
+  
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {"light": "#F7F9FA", "dark": "#0B0E11"},
+      "widgetBackgroundColor": {"light": "#FFFFFF", "dark": "#1A1D21"},
+      "widgetBorderColor": {"light": "#E0E4E8", "dark": "#2A2E33"},
+      "fontColor": {"light": "#11171C", "dark": "#E8ECF0"},
+      "selectionColor": {"light": "#077A9D", "dark": "#8ACAE7"},
+      "visualizationColors": [
+        "#077A9D", "#00A972", "#FFAB00", "#FF3621",
+        "#8BCAE7", "#99DDB4", "#FCA4A1", "#AB4057",
+        "#6B4FBB", "#BF7080"
+      ],
+      "widgetHeaderAlignment": "LEFT"
+    },
+    "genieSpace": {"isEnabled": false}
+  }
+}
+

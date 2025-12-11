@@ -1,0 +1,80 @@
+# Wanderbricks Silver Layer - Validation and Testing Job
+# Validates Silver layer tables, data quality metrics, and referential integrity
+#
+# Usage:
+#   databricks bundle run silver_validation_job -t dev
+
+resources:
+  jobs:
+    silver_validation_job:
+      name: "[${bundle.target}] Wanderbricks Silver - Validation & Testing"
+      description: "Validates Silver layer deployment: table counts, DQ metrics, referential integrity, and quarantine analysis"
+      
+      # Serverless environment configuration
+      environments:
+        - environment_key: "default"
+          spec:
+            environment_version: "4"
+      
+      tasks:
+        # Task 1: Validate Silver table counts
+        # Uses silver_tables_schema which includes DLT dev prefix in dev mode
+        - task_key: validate_table_counts
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_silver/validation/validate_table_counts.py
+            base_parameters:
+              catalog: ${var.catalog}
+              silver_schema: ${var.silver_tables_schema}
+        
+        # Task 2: Validate DQ metrics (depends on Task 1)
+        - task_key: validate_dq_metrics
+          depends_on:
+            - task_key: validate_table_counts
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_silver/validation/validate_dq_metrics.py
+            base_parameters:
+              catalog: ${var.catalog}
+              silver_schema: ${var.silver_tables_schema}
+        
+        # Task 3: Validate referential integrity
+        - task_key: validate_referential_integrity
+          depends_on:
+            - task_key: validate_dq_metrics
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_silver/validation/validate_referential_integrity.py
+            base_parameters:
+              catalog: ${var.catalog}
+              silver_schema: ${var.silver_tables_schema}
+        
+        # Task 4: Analyze quarantine tables
+        - task_key: analyze_quarantine
+          depends_on:
+            - task_key: validate_referential_integrity
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/wanderbricks_silver/validation/analyze_quarantine.py
+            base_parameters:
+              catalog: ${var.catalog}
+              silver_schema: ${var.silver_tables_schema}
+      
+      # Timeout at job level
+      timeout_seconds: 3600  # 1 hour
+      
+      # Email notifications
+      email_notifications:
+        on_failure:
+          - data-engineering@company.com
+        on_success:
+          - data-engineering@company.com
+      
+      # Tags
+      tags:
+        environment: ${bundle.target}
+        project: wanderbricks
+        layer: silver
+        job_type: validation
+        compute_type: serverless
+
