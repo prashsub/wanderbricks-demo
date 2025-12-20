@@ -644,6 +644,291 @@ tasks:
 - Version pinning for reproducibility
 - Reduces YAML duplication
 
+## 🔴 MANDATORY: Hierarchical Job Architecture Pattern
+
+**EVERY PROJECT MUST USE THIS 3-LAYER JOB HIERARCHY:**
+
+### Core Principle: No Notebook Duplication
+
+**Each notebook appears in EXACTLY ONE atomic job.** Higher-level jobs reference lower-level jobs via `run_job_task`, never duplicate notebooks.
+
+### Architecture Overview
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        LAYER 3: MASTER ORCHESTRATORS                          │
+│         References Layer 2 composite jobs via run_job_task                    │
+│         NO direct notebook references                                          │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  master_setup_orchestrator                master_refresh_orchestrator         │
+│         │                                         │                           │
+│    ┌────┴────┬────────────┐              ┌───────┴────────┐                  │
+│    ▼         ▼            ▼              ▼                ▼                  │
+│ semantic  monitoring   ml_layer    monitoring_ref   ml_inference             │
+│  _setup    _setup      _setup         resh                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        LAYER 2: COMPOSITE JOBS                                │
+│         References Layer 1 atomic jobs via run_job_task                       │
+│         NO direct notebook references                                          │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  semantic_layer_setup_job        monitoring_layer_setup_job                  │
+│         │                                │                                   │
+│    ┌────┴────┐                          │                                   │
+│    ▼         ▼                          ▼                                   │
+│  tvf_job  metric_view_job      lakehouse_monitoring_setup_job                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        LAYER 1: ATOMIC JOBS                                   │
+│         Contains actual notebook_task references                              │
+│         Single-purpose, testable independently                                │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  tvf_deployment_job          metric_view_deployment_job                      │
+│  lakehouse_monitoring_job    ml_training_pipeline                            │
+│  ml_inference_pipeline       gold_setup_job                                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Layer 1: Atomic Jobs (Notebook Tasks)
+
+**Atomic jobs contain actual notebook references. Each notebook appears in exactly ONE atomic job.**
+
+```yaml
+# Layer 1: Atomic Job - Single purpose, single notebook
+# File: resources/semantic/tvf_deployment_job.yml
+
+resources:
+  jobs:
+    tvf_deployment_job:
+      name: "[${bundle.target}] Health Monitor - TVF Deployment"
+      description: "Atomic job: Deploys Table-Valued Functions"
+      
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+      
+      tasks:
+        - task_key: deploy_all_tvfs
+          environment_key: default
+          notebook_task:  # ✅ Actual notebook reference
+            notebook_path: ../../src/semantic/tvfs/deploy_tvfs.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.gold_schema}
+      
+      tags:
+        job_level: atomic  # ✅ Mark as atomic
+        layer: semantic
+```
+
+### Layer 2: Composite Jobs (Job References)
+
+**Composite jobs reference atomic jobs via `run_job_task`. NO direct notebook references.**
+
+```yaml
+# Layer 2: Composite Job - References atomic jobs
+# File: resources/semantic/semantic_layer_setup_job.yml
+
+resources:
+  jobs:
+    semantic_layer_setup_job:
+      name: "[${bundle.target}] Health Monitor - Semantic Layer Setup"
+      description: "Composite job: Deploys TVFs and Metric Views by referencing atomic jobs"
+      
+      tasks:
+        # ✅ Reference atomic job, NOT notebook directly
+        - task_key: deploy_tvfs
+          run_job_task:
+            job_id: ${resources.jobs.tvf_deployment_job.id}
+        
+        # ✅ Reference another atomic job
+        - task_key: deploy_metric_views
+          depends_on:
+            - task_key: deploy_tvfs
+          run_job_task:
+            job_id: ${resources.jobs.metric_view_deployment_job.id}
+      
+      tags:
+        job_level: composite  # ✅ Mark as composite
+        layer: semantic
+```
+
+### Layer 3: Master Orchestrators (Composite References)
+
+**Master orchestrators reference composite and atomic jobs. NO direct notebook references.**
+
+```yaml
+# Layer 3: Master Orchestrator - References composite jobs
+# File: resources/orchestrators/master_setup_orchestrator.yml
+
+resources:
+  jobs:
+    master_setup_orchestrator:
+      name: "[${bundle.target}] Health Monitor - Master Setup Orchestrator"
+      description: "Master orchestrator: References all setup jobs (no direct notebooks)"
+      
+      tasks:
+        # Phase 1: Data Layer (atomic jobs)
+        - task_key: bronze_setup
+          run_job_task:
+            job_id: ${resources.jobs.bronze_setup_job.id}
+        
+        - task_key: gold_setup
+          depends_on:
+            - task_key: bronze_setup
+          run_job_task:
+            job_id: ${resources.jobs.gold_setup_job.id}
+        
+        # Phase 2: Semantic Layer (composite job → atomic jobs)
+        - task_key: semantic_layer_setup
+          depends_on:
+            - task_key: gold_setup
+          run_job_task:
+            job_id: ${resources.jobs.semantic_layer_setup_job.id}
+        
+        # Phase 3: Monitoring Layer (composite job → atomic jobs)
+        - task_key: monitoring_layer_setup
+          depends_on:
+            - task_key: gold_setup
+          run_job_task:
+            job_id: ${resources.jobs.monitoring_layer_setup_job.id}
+        
+        # Phase 4: ML Layer (composite job → atomic jobs)
+        - task_key: ml_layer_setup
+          depends_on:
+            - task_key: gold_setup
+          run_job_task:
+            job_id: ${resources.jobs.ml_layer_setup_job.id}
+      
+      tags:
+        job_level: orchestrator  # ✅ Mark as orchestrator
+        orchestrator: master
+        layer: all
+```
+
+### ❌ WRONG: Notebook Duplication
+
+```yaml
+# ❌ WRONG: Same notebook in multiple jobs!
+
+# File 1: resources/semantic/tvf_job.yml
+tasks:
+  - task_key: deploy_tvfs
+    notebook_task:
+      notebook_path: ../../src/semantic/tvfs/deploy_tvfs.py  # ❌ Duplicated!
+
+# File 2: resources/orchestrators/setup_orchestrator.yml
+tasks:
+  - task_key: deploy_tvfs
+    notebook_task:
+      notebook_path: ../../src/semantic/tvfs/deploy_tvfs.py  # ❌ Same notebook!
+```
+
+**Problems:**
+- Changes require updating multiple files
+- Inconsistent parameter passing
+- No single source of truth
+- Difficult to track failures
+
+### ✅ CORRECT: Job Reference Pattern
+
+```yaml
+# ✅ CORRECT: Notebook in ONE atomic job, referenced by orchestrator
+
+# File 1: resources/semantic/tvf_job.yml (ATOMIC)
+tasks:
+  - task_key: deploy_tvfs
+    notebook_task:
+      notebook_path: ../../src/semantic/tvfs/deploy_tvfs.py  # ✅ Single source
+
+# File 2: resources/orchestrators/setup_orchestrator.yml (ORCHESTRATOR)
+tasks:
+  - task_key: deploy_tvfs
+    run_job_task:
+      job_id: ${resources.jobs.tvf_deployment_job.id}  # ✅ Reference job, not notebook
+```
+
+### Benefits of Hierarchical Architecture
+
+| Benefit | Description |
+|---------|-------------|
+| **Modularity** | Change one job without affecting others |
+| **Debugging** | Isolate failures to specific atomic jobs |
+| **Monitoring** | Track success/failure at granular level |
+| **Flexibility** | Run any subset of the pipeline |
+| **Testability** | Test atomic jobs independently |
+| **Ownership** | Clear team responsibility per layer |
+
+### Standard Job Levels Tag
+
+```yaml
+tags:
+  job_level: <atomic|composite|orchestrator>  # ✅ Always include
+```
+
+### Directory Structure Pattern
+
+```
+resources/
+├── orchestrators/                     # Layer 3: Master orchestrators
+│   ├── master_setup_orchestrator.yml
+│   └── master_refresh_orchestrator.yml
+│
+├── semantic/                          # Domain: Semantic Layer
+│   ├── semantic_layer_setup_job.yml   # Layer 2: Composite
+│   ├── tvf_deployment_job.yml         # Layer 1: Atomic
+│   └── metric_view_deployment_job.yml # Layer 1: Atomic
+│
+├── monitoring/                        # Domain: Monitoring
+│   ├── monitoring_layer_setup_job.yml # Layer 2: Composite
+│   ├── monitoring_layer_refresh_job.yml # Layer 2: Composite
+│   ├── lakehouse_monitoring_setup_job.yml # Layer 1: Atomic
+│   └── lakehouse_monitoring_refresh_job.yml # Layer 1: Atomic
+│
+├── ml/                                # Domain: Machine Learning
+│   ├── ml_layer_setup_job.yml         # Layer 2: Composite
+│   ├── ml_layer_inference_job.yml     # Layer 2: Composite
+│   ├── ml_feature_pipeline.yml        # Layer 1: Atomic
+│   ├── ml_training_pipeline.yml       # Layer 1: Atomic
+│   └── ml_inference_pipeline.yml      # Layer 1: Atomic
+│
+└── pipelines/                         # Domain: Data Pipelines
+    ├── bronze/
+    │   ├── bronze_setup_job.yml       # Layer 1: Atomic
+    │   └── bronze_refresh_job.yml     # Layer 1: Atomic
+    └── gold/
+        ├── gold_setup_job.yml         # Layer 1: Atomic
+        └── gold_merge_job.yml         # Layer 1: Atomic
+```
+
+### Validation Checklist for Hierarchical Jobs
+
+- [ ] Each notebook appears in exactly ONE atomic job
+- [ ] Composite jobs use `run_job_task` only (no `notebook_task`)
+- [ ] Master orchestrators use `run_job_task` only (no `notebook_task`)
+- [ ] All jobs have `job_level` tag (atomic, composite, or orchestrator)
+- [ ] Atomic jobs have `environment_key` and `environments` block
+- [ ] Job references use `${resources.jobs.<job_name>.id}` format
+- [ ] Dependencies within orchestrators use `depends_on`
+
+### Testing Each Layer
+
+```bash
+# Test Layer 1 (Atomic) - Individual functionality
+databricks bundle run -t dev tvf_deployment_job
+databricks bundle run -t dev metric_view_deployment_job
+
+# Test Layer 2 (Composite) - Domain functionality
+databricks bundle run -t dev semantic_layer_setup_job
+databricks bundle run -t dev monitoring_layer_setup_job
+
+# Test Layer 3 (Orchestrator) - Complete workflow
+databricks bundle run -t dev master_setup_orchestrator
+```
+
 ## Schema Management Pattern
 
 ```yaml
@@ -1015,6 +1300,15 @@ Before deploying any notebook script:
 
 When creating Asset Bundle configurations:
 
+### Hierarchical Job Architecture (MANDATORY)
+- [ ] Each notebook appears in exactly ONE atomic job (no duplication)
+- [ ] Atomic jobs (Layer 1) use `notebook_task` with `notebook_path`
+- [ ] Composite jobs (Layer 2) use `run_job_task` only (NO `notebook_task`)
+- [ ] Master orchestrators (Layer 3) use `run_job_task` only (NO `notebook_task`)
+- [ ] All jobs have `job_level` tag: `atomic`, `composite`, or `orchestrator`
+- [ ] Job references use `${resources.jobs.<job_name>.id}` format
+- [ ] Dependencies within orchestrators use `depends_on`
+
 ### General Configuration
 - [ ] Use serverless compute for all new jobs/pipelines
 - [ ] Include `[${bundle.target}]` prefix in names
@@ -1062,6 +1356,30 @@ When creating Asset Bundle configurations:
 ## Common Mistakes to Avoid
 
 ❌ **Don't do this:**
+
+### Notebook Duplication (CRITICAL)
+```yaml
+# ❌ WRONG: Same notebook in multiple jobs
+# File 1: resources/semantic/tvf_job.yml
+tasks:
+  - task_key: deploy_tvfs
+    notebook_task:
+      notebook_path: ../../src/deploy_tvfs.py  # ❌ Also in orchestrator!
+
+# File 2: resources/orchestrators/setup.yml
+tasks:
+  - task_key: deploy_tvfs
+    notebook_task:
+      notebook_path: ../../src/deploy_tvfs.py  # ❌ Duplicated notebook!
+
+# ✅ CORRECT: Use run_job_task in orchestrator
+# File 2: resources/orchestrators/setup.yml
+tasks:
+  - task_key: deploy_tvfs
+    run_job_task:
+      job_id: ${resources.jobs.tvf_deployment_job.id}  # ✅ Reference job
+```
+
 ```bash
 # ❌ WRONG: Creating shell scripts to reorganize code
 # Asset Bundles can't execute shell scripts during deployment
@@ -1681,5 +1999,6 @@ databricks bundle destroy -t dev
 - [DLT Pipeline Example](https://github.com/databricks/bundle-examples/blob/main/knowledge_base/pipeline_with_schema/resources/pipeline.yml)
 
 ### Project Documentation
+- [Job Architecture Guide](../docs/reference/JOB_ARCHITECTURE.md) - Hierarchical job architecture documentation
 - [Orchestrator Guide](../docs/deployment/ORCHESTRATOR_GUIDE.md) - Complete orchestrator implementation guide
 - [Orchestrator Quick Reference](../docs/deployment/ORCHESTRATOR_QUICKREF.md) - Quick command reference
