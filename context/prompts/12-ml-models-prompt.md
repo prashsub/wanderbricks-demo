@@ -2,81 +2,78 @@
 
 ## 🚀 Quick Start (4-6 hours)
 
-**Goal:** Build production-ready ML pipelines with MLflow 3.1+, Unity Catalog Model Registry, and Databricks Feature Store
+**Goal:** Build production-ready ML pipelines with MLflow 3.1+, Unity Catalog Model Registry, and **Databricks Feature Engineering** for training-serving consistency.
 
 **What You'll Create:**
-1. `feature_store/setup_feature_tables.py` - Feature tables for ML models
-2. `models/{model_name}/train.py` - Training pipelines (one per model)
-3. `inference/batch_inference.py` - Batch scoring pipeline
+1. `features/create_feature_tables.py` - Feature tables in Unity Catalog
+2. `{domain}/train_{model_name}.py` - Training pipelines with Feature Engineering
+3. `inference/batch_inference_all_models.py` - Batch scoring with `fe.score_batch`
 4. Asset Bundle jobs for orchestration
 
 **Fast Track:**
 ```bash
-# 1. Setup Feature Store
-databricks bundle run ml_feature_store_setup_job -t dev
+# 1. Create Feature Tables
+databricks bundle run ml_feature_pipeline_job -t dev
 
 # 2. Train all models (parallel)
-databricks bundle run ml_training_orchestrator_job -t dev
+databricks bundle run ml_training_pipeline_job -t dev
 
 # 3. Run batch inference
-databricks bundle run ml_batch_inference_job -t dev
+databricks bundle run ml_inference_pipeline_job -t dev
 ```
-
-**⚠️ 5 Non-Negotiable Rules:**
-
-| Rule | Pattern | Why It Fails Otherwise |
-|------|---------|------------------------|
-| 1. Experiment Path | `/Shared/{project}_ml_{model_name}` | `/Users/...` fails silently if subfolder doesn't exist |
-| 2. Dataset Logging | Inside `mlflow.start_run()` context | Won't associate with run, invisible in UI |
-| 3. Helper Functions | ALWAYS inline (no imports) | `ModuleNotFoundError` in serverless |
-| 4. Exit Signal | `dbutils.notebook.exit("SUCCESS")` | Job status unclear, may show SUCCESS on failure |
-| 5. UC Signature | BOTH input AND output | Unity Catalog rejects models without output spec |
-
-**Output:** Trained models in Unity Catalog, prediction tables, feature tables
-
-📖 **Full guide below** for detailed implementation →
 
 ---
 
-## Quick Reference
+## ⚠️ 10 Non-Negotiable Rules
 
-**Use this prompt to create ML pipelines with feature engineering, model training, and batch inference.**
-
-**Prerequisites:** Gold layer tables must exist (data source for features and training).
-
-**Reference Implementation:** [Wanderbricks ML](https://github.com/databricks/wanderbricks/src/wanderbricks_ml)
+| # | Rule | Pattern | Why It Fails Otherwise |
+|---|------|---------|------------------------|
+| 1 | **Feature Engineering** | `FeatureLookup` + `create_training_set` + `fe.log_model` | Feature skew between training and inference |
+| 2 | **Experiment Path** | `/Shared/{project}_ml_{model_name}` | `/Users/...` fails silently if subfolder doesn't exist |
+| 3 | **Dataset Logging** | Inside `mlflow.start_run()` context | Won't associate with run, invisible in UI |
+| 4 | **Helper Functions** | ALWAYS inline (no imports) | `ModuleNotFoundError` in serverless |
+| 5 | **Exit Signal** | `dbutils.notebook.exit("SUCCESS")` | Job status unclear, may show SUCCESS on failure |
+| 6 | **UC Signature** | BOTH input AND output | Unity Catalog rejects models without output spec |
+| 7 | **Data Types** | Cast DECIMAL → DOUBLE before training | MLflow signatures don't support DecimalType |
+| 8 | **Label Types** | Cast to INT (classification) or DOUBLE (regression) | Type mismatch in model output |
+| 9 | **Lookup Keys** | Match Feature Table primary keys EXACTLY | `Unable to find feature` errors |
+| 10 | **Inference** | Use `fe.score_batch` NOT manual feature joins | Automatic feature retrieval ensures consistency |
 
 ---
 
 ## 📋 Your Requirements (Fill These In First)
 
 ### Project Context
-- **Project Name:** _________________ (e.g., customer_analytics)
+- **Project Name:** _________________ (e.g., health_monitor)
 - **Gold Schema:** _________________ (e.g., my_project_gold)
-- **ML Schema:** _________________ (e.g., my_project_ml)
+- **Feature Schema:** _________________ (e.g., my_project_features)
 - **Catalog:** _________________ (e.g., my_catalog)
-
-### Model Inventory
-
-| Model Name | Type | Algorithm | Target Variable | Use Case |
-|------------|------|-----------|-----------------|----------|
-| ___________ | Regression/Classification | XGBoost/Prophet/etc | ___________ | ___________ |
-| ___________ | ___________ | ___________ | ___________ | ___________ |
-| ___________ | ___________ | ___________ | ___________ | ___________ |
 
 ### Feature Tables
 
-| Feature Table | Entity Key | Features | Refresh |
-|---------------|------------|----------|---------|
-| ___________ | ___________ | ___________ | Daily/Hourly |
+| Feature Table | Primary Keys | Features | Source Tables |
+|---------------|--------------|----------|---------------|
+| cost_features | workspace_id, usage_date | daily_dbu, daily_cost, avg_dbu_7d | fact_usage |
+| security_features | user_id, event_date | event_count, failed_auth_count | fact_audit_logs |
+| performance_features | warehouse_id, query_date | query_count, avg_duration_ms | fact_query_history |
 | ___________ | ___________ | ___________ | ___________ |
 
-### Performance Targets
+### Model Inventory
 
-| Model | Metric | Target |
-|-------|--------|--------|
-| ___________ | MAPE/RMSE/AUC-ROC | <___% |
-| ___________ | ___________ | ___________ |
+| Model Name | Type | Algorithm | Label Column | Label Type | Feature Table |
+|------------|------|-----------|--------------|------------|---------------|
+| budget_forecaster | Regression | GradientBoosting | daily_cost | DOUBLE | cost_features |
+| cost_anomaly_detector | Anomaly | IsolationForest | (unsupervised) | N/A | cost_features |
+| job_failure_predictor | Classification | XGBoost | prev_day_failed | INT | reliability_features |
+| ___________ | ___________ | ___________ | ___________ | ___________ | ___________ |
+
+### Label Type Reference
+
+| Model Type | Label Casting | Example |
+|------------|---------------|---------|
+| Regression | `.cast("double")` or `.astype('float64')` | `daily_cost`, `p99_duration_ms` |
+| Classification | `.cast("int")` or `.astype(int)` | `is_anomaly`, `prev_day_failed`, `schema_change_risk` |
+| Anomaly Detection | N/A (unsupervised) | No label column |
 
 ---
 
@@ -90,36 +87,39 @@ databricks bundle run ml_batch_inference_job -t dev
                         │
                         ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                   Feature Store (Unity Catalog)                  │
+│              Feature Tables (Unity Catalog)                      │
 │  ┌───────────────────┐ ┌──────────────────┐ ┌─────────────────┐ │
-│  │ entity1_features  │ │  entity2_features │ │ entity3_        │ │
-│  │ • Attributes      │ │  • Demographics   │ │   features      │ │
-│  │ • Historical      │ │  • Behavior       │ │ • Engagement    │ │
-│  │ • Aggregations    │ │  • Transaction    │ │ • Rolling       │ │
-│  └───────────────────┘ └──────────────────┘ └─────────────────┘ │
+│  │ cost_features     │ │ security_features│ │ performance_    │ │
+│  │ PK: workspace_id, │ │ PK: user_id,     │ │   features      │ │
+│  │     usage_date    │ │     event_date   │ │ PK: warehouse_id│ │
+│  └───────────────────┘ └──────────────────┘ │     query_date  │ │
+│                                             └─────────────────┘ │
 └───────────────────────┬─────────────────────────────────────────┘
                         │
                         ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Training Pipelines                            │
-│  ┌─────────────┐ ┌────────────┐ ┌─────────────┐ ┌────────────┐  │
-│  │   Model 1   │ │   Model 2   │ │   Model 3   │ │  Model N   │  │
-│  └─────────────┘ └────────────┘ └─────────────┘ └────────────┘  │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │  FeatureLookup → create_training_set → train → fe.log_model ││
+│  │  (Embeds feature metadata for inference consistency)        ││
+│  └─────────────────────────────────────────────────────────────┘│
 └───────────────────────┬─────────────────────────────────────────┘
                         │
                         ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │             Unity Catalog Model Registry (MLflow 3.1+)           │
-│         catalog.{ml_schema}.{model_name}                         │
+│         catalog.{feature_schema}.{model_name}                    │
+│         (Model + Feature Lookup Metadata embedded)               │
 └───────────────────────┬─────────────────────────────────────────┘
                         │
                         ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      Inference Layer                             │
-│  ┌──────────────────────────┐  ┌──────────────────────────────┐ │
-│  │  Batch Inference         │  │  Model Serving Endpoints     │ │
-│  │  (Daily scheduled jobs)  │  │  (Real-time REST APIs)       │ │
-│  └──────────────────────────┘  └──────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │  fe.score_batch(model_uri, df_with_lookup_keys_only)     │   │
+│  │  → Automatically retrieves features from Feature Tables  │   │
+│  │  → Guarantees training-serving consistency               │   │
+│  └──────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -129,44 +129,47 @@ databricks bundle run ml_batch_inference_job -t dev
 
 ```
 src/{project}_ml/
-├── feature_store/
-│   └── setup_feature_tables.py     # Feature table creation
-├── models/
-│   ├── {model_1}/
-│   │   └── train.py                # Training pipeline
-│   ├── {model_2}/
-│   │   └── train.py
-│   └── {model_n}/
-│       └── train.py
+├── features/
+│   └── create_feature_tables.py     # Feature table creation
+├── cost/
+│   ├── train_budget_forecaster.py
+│   ├── train_cost_anomaly_detector.py
+│   └── train_chargeback_attribution.py
+├── security/
+│   └── train_security_threat_detector.py
+├── performance/
+│   └── train_query_performance_forecaster.py
+├── reliability/
+│   └── train_job_failure_predictor.py
+├── quality/
+│   └── train_data_drift_detector.py
 ├── inference/
-│   └── batch_inference.py          # Batch scoring pipeline
+│   └── batch_inference_all_models.py  # Uses fe.score_batch
 └── README.md
 
 resources/ml/
-├── ml_feature_store_setup_job.yml  # Feature Store setup job
-├── ml_training_orchestrator_job.yml # Training orchestrator
-└── ml_batch_inference_job.yml      # Batch inference job
+├── ml_feature_pipeline_job.yml       # Feature table creation
+├── ml_training_pipeline_job.yml      # Training orchestrator
+└── ml_inference_pipeline_job.yml     # Batch inference
 ```
 
 ---
 
-## Step 1: Feature Store Setup
+## Step 1: Feature Table Creation
 
 ### Feature Engineering Pattern
 
 ```python
 # Databricks notebook source
 """
-{Project} Feature Store Setup
+Feature Tables Setup
 
 Creates feature tables in Unity Catalog for ML model training.
-Uses Databricks Feature Engineering Client.
-
-SCHEMA-GROUNDED: All column references verified against Gold layer YAML schemas.
+Uses Databricks Feature Engineering Client with proper primary keys.
 """
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import *
+from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 from databricks.feature_engineering import FeatureEngineeringClient
 from datetime import datetime, timedelta
@@ -185,181 +188,155 @@ def get_parameters():
     return catalog, gold_schema, feature_schema
 
 
-def create_catalog_and_schema(spark: SparkSession, catalog: str, feature_schema: str):
-    """Ensures the Unity Catalog schema exists for feature tables and models."""
-    print(f"Ensuring catalog '{catalog}' and schema '{feature_schema}' exist...")
-    spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
-    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{feature_schema}")
-    
-    # Enable predictive optimization at schema level
-    try:
-        spark.sql(f"ALTER SCHEMA {catalog}.{feature_schema} ENABLE PREDICTIVE OPTIMIZATION")
-        print(f"✓ Enabled predictive optimization for {catalog}.{feature_schema}")
-    except Exception as e:
-        print(f"⚠ Could not enable predictive optimization: {e}")
-    
-    print(f"✓ Schema {catalog}.{feature_schema} ready for feature tables")
-
-
-def create_{entity}_features(
+def create_feature_table(
     spark: SparkSession,
-    catalog: str,
-    gold_schema: str,
-    feature_schema: str,
-    fe: FeatureEngineeringClient
+    fe: FeatureEngineeringClient,
+    features_df,
+    full_table_name: str,
+    primary_keys: list,
+    description: str
 ):
     """
-    Create {entity}-level features for ML models.
+    Create a feature table in Unity Catalog with proper constraints.
     
-    Schema grounded in: gold_layer_design/yaml/{domain}/dim_{entity}.yaml
-    
-    Features include:
-    - Attributes: {list attribute features}
-    - Historical: {list historical aggregations}
-    - Engagement: {list engagement metrics}
+    ⚠️ CRITICAL: Primary key columns MUST be NOT NULL.
     """
-    print("\n" + "="*80)
-    print(f"Creating {entity}_features table")
-    print("="*80)
+    print(f"\n{'='*80}")
+    print(f"Creating feature table: {full_table_name}")
+    print(f"Primary Keys: {primary_keys}")
+    print(f"{'='*80}")
     
-    # Load Gold layer tables
-    dim_{entity} = spark.table(f"{catalog}.{gold_schema}.dim_{entity}")
-    fact_table = spark.table(f"{catalog}.{gold_schema}.fact_{entity}_activity")
+    # Filter out NULL values in primary key columns
+    for pk in primary_keys:
+        features_df = features_df.filter(F.col(pk).isNotNull())
     
-    # Calculate historical metrics (last 30 days)
-    thirty_days_ago = (datetime.now() - timedelta(days=30)).date()
-    
-    # Aggregate metrics from fact table
-    historical_metrics = (
-        fact_table
-        .filter(col("activity_date") >= lit(thirty_days_ago))
-        .groupBy("{entity}_id")
-        .agg(
-            count("*").alias("activity_count_30d"),
-            sum("amount").alias("total_amount_30d"),
-            avg("amount").alias("avg_amount_30d")
-        )
-    )
-    
-    # Combine all features
-    # ⚠️ GROUNDED: Only columns from Gold layer YAML schema
-    {entity}_features = (
-        dim_{entity}
-        .filter(col("is_current") == True)  # If SCD2 table
-        .select(
-            "{entity}_id",
-            # Select columns that exist in Gold layer
-        )
-        .join(historical_metrics, "{entity}_id", "left")
-        .fillna(0, subset=["activity_count_30d", "total_amount_30d", "avg_amount_30d"])
-        .withColumn("feature_timestamp", current_timestamp())
-    )
+    # Drop existing table for clean recreation
+    try:
+        spark.sql(f"DROP TABLE IF EXISTS {full_table_name}")
+    except Exception as e:
+        print(f"⚠ Could not drop existing table: {e}")
     
     # Create feature table
-    feature_table_name = f"{catalog}.{feature_schema}.{entity}_features"
-    
     fe.create_table(
-        name=feature_table_name,
-        primary_keys=["{entity}_id"],  # Single or composite key
-        df={entity}_features,
-        description="{Entity}-level features for ML models"
+        name=full_table_name,
+        primary_keys=primary_keys,
+        df=features_df,
+        description=description
     )
     
-    record_count = {entity}_features.count()
-    print(f"✓ Created {entity}_features with {record_count} records")
+    record_count = features_df.count()
+    print(f"✓ Created {full_table_name} with {record_count} records")
+    
+    return record_count
+
+
+def compute_cost_features(spark: SparkSession, catalog: str, gold_schema: str):
+    """
+    Compute cost features aggregated at workspace-date level.
+    
+    Primary Keys: workspace_id, usage_date
+    """
+    fact_usage = f"{catalog}.{gold_schema}.fact_usage"
+    
+    cost_features = (
+        spark.table(fact_usage)
+        .groupBy("workspace_id", F.to_date("usage_date").alias("usage_date"))
+        .agg(
+            F.sum("dbus").alias("daily_dbu"),
+            F.sum("list_cost").alias("daily_cost"),
+            F.count("*").alias("record_count")
+        )
+    )
+    
+    # Add rolling aggregations
+    window_7d = Window.partitionBy("workspace_id").orderBy("usage_date").rowsBetween(-6, 0)
+    window_30d = Window.partitionBy("workspace_id").orderBy("usage_date").rowsBetween(-29, 0)
+    
+    cost_features = (
+        cost_features
+        .withColumn("avg_dbu_7d", F.avg("daily_dbu").over(window_7d))
+        .withColumn("avg_dbu_30d", F.avg("daily_dbu").over(window_30d))
+        .withColumn("dbu_change_pct_1d", 
+            (F.col("daily_dbu") - F.lag("daily_dbu", 1).over(
+                Window.partitionBy("workspace_id").orderBy("usage_date")
+            )) / F.lag("daily_dbu", 1).over(
+                Window.partitionBy("workspace_id").orderBy("usage_date")
+            ) * 100
+        )
+        .withColumn("is_weekend", F.dayofweek("usage_date").isin([1, 7]).cast("int"))
+        .withColumn("day_of_week", F.dayofweek("usage_date"))
+        .fillna(0)
+    )
+    
+    return cost_features
 
 
 def main():
-    """Main entry point for feature store setup."""
+    """Main entry point for feature table creation."""
     
     catalog, gold_schema, feature_schema = get_parameters()
     
-    spark = SparkSession.builder.appName("Feature Store Setup").getOrCreate()
+    spark = SparkSession.builder.appName("Feature Tables Setup").getOrCreate()
     fe = FeatureEngineeringClient()
     
     try:
-        create_catalog_and_schema(spark, catalog, feature_schema)
+        # Ensure schema exists
+        spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{feature_schema}")
         
-        # Create feature tables (schema-grounded)
-        create_{entity1}_features(spark, catalog, gold_schema, feature_schema, fe)
-        create_{entity2}_features(spark, catalog, gold_schema, feature_schema, fe)
-        # ... additional feature tables
+        # Create cost features
+        cost_features = compute_cost_features(spark, catalog, gold_schema)
+        create_feature_table(
+            spark, fe, cost_features,
+            f"{catalog}.{feature_schema}.cost_features",
+            ["workspace_id", "usage_date"],
+            "Cost and usage features for ML models"
+        )
+        
+        # Create additional feature tables...
         
         print("\n" + "="*80)
-        print("✓ Feature Store setup completed successfully!")
+        print("✓ Feature tables created successfully!")
         print("="*80)
         
     except Exception as e:
-        print(f"\n❌ Error during feature store setup: {str(e)}")
+        print(f"\n❌ Error: {str(e)}")
         import traceback
         traceback.print_exc()
-        raise
+        dbutils.notebook.exit(f"FAILED: {str(e)}")
+    
+    dbutils.notebook.exit("SUCCESS")
 
 
 if __name__ == "__main__":
     main()
 ```
 
-### Feature Table Creation Rules
-
-```python
-from databricks.feature_engineering import FeatureEngineeringClient
-
-fe = FeatureEngineeringClient()
-
-# ✅ CORRECT: Primary keys without timestamp_keys
-fe.create_table(
-    name=f"{catalog}.{feature_schema}.{entity}_features",
-    primary_keys=["{entity}_id"],  # Single key
-    df=features_df,
-    description="Description for discoverability"
-)
-
-# ✅ CORRECT: Composite primary key for time-series features
-fe.create_table(
-    name=f"{catalog}.{feature_schema}.{entity}_daily_features",
-    primary_keys=["{entity}_id", "feature_date"],  # Composite key
-    df=daily_features_df,
-    description="Daily features with composite key"
-)
-
-# ❌ WRONG: timestamp_keys was removed in newer versions
-fe.create_table(
-    name=feature_table_name,
-    primary_keys=["{entity}_id"],
-    timestamp_keys=["feature_date"],  # ❌ Not supported anymore
-    df=features_df
-)
-```
-
 ---
 
-## Step 2: Model Training Pipeline
+## Step 2: Model Training with Feature Engineering
 
-### Standard Training Template
+### ⚠️ CRITICAL: Pattern A - Using `fe.log_model` with Feature Lookups
 
-**⚠️ CRITICAL: All helper functions MUST be inlined. Module imports fail in serverless.**
+**This pattern embeds feature lookup metadata in the model, enabling automatic feature retrieval at inference.**
 
 ```python
 # Databricks notebook source
 """
 {Model Name} Training Pipeline
 
-Trains a {model_type} model for {use_case}.
-Uses {algorithm} with MLflow 3.1+ best practices.
-
-Reference: https://learn.microsoft.com/en-us/azure/databricks/mlflow/mlflow-3-install
+Uses Databricks Feature Engineering for training-serving consistency.
+Features are automatically retrieved at inference via fe.score_batch.
 """
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import *
+from pyspark.sql import functions as F
 from databricks.feature_engineering import FeatureEngineeringClient, FeatureLookup
 import mlflow
-from mlflow.models import infer_signature
+from mlflow.models.signature import infer_signature
 import pandas as pd
 import numpy as np
-from xgboost import XGBRegressor  # or XGBClassifier
-from sklearn.model_selection import train_test_split, TimeSeriesSplit
+from sklearn.ensemble import GradientBoostingRegressor  # or appropriate algorithm
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from datetime import datetime
 
@@ -377,15 +354,12 @@ def setup_mlflow_experiment(model_name: str) -> str:
     Set up MLflow experiment using /Shared/ path.
     
     ⚠️ CRITICAL: Do NOT move this to a shared module!
-    Asset Bundle notebooks can't reliably import local modules.
-    
-    ⚠️ NEVER use /Users/{user}/... paths - they fail silently if subfolder doesn't exist.
+    ⚠️ NEVER use /Users/{user}/... paths - they fail silently.
     """
     print("\n" + "="*80)
     print(f"Setting up MLflow Experiment: {model_name}")
     print("="*80)
     
-    # ✅ CORRECT: /Shared/ path always works
     experiment_name = f"/Shared/{project}_ml_{model_name}"
     
     try:
@@ -398,29 +372,6 @@ def setup_mlflow_experiment(model_name: str) -> str:
         return None
 
 
-def log_training_dataset(spark, catalog: str, schema: str, table_name: str) -> bool:
-    """
-    Log training dataset for MLflow lineage.
-    
-    ⚠️ CRITICAL: MUST be called inside mlflow.start_run() context!
-    """
-    full_table_name = f"{catalog}.{schema}.{table_name}"
-    try:
-        print(f"  Logging dataset: {full_table_name}")
-        training_df = spark.table(full_table_name)
-        dataset = mlflow.data.from_spark(
-            df=training_df, 
-            table_name=full_table_name,
-            version="latest"
-        )
-        mlflow.log_input(dataset, context="training")
-        print(f"✓ Dataset logged: {full_table_name}")
-        return True
-    except Exception as e:
-        print(f"⚠️  Dataset logging failed: {e}")
-        return False
-
-
 def get_run_name(model_name: str, algorithm: str, version: str = "v1") -> str:
     """Generate descriptive run name for MLflow tracking."""
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -428,19 +379,17 @@ def get_run_name(model_name: str, algorithm: str, version: str = "v1") -> str:
 
 
 def get_standard_tags(model_name: str, domain: str, model_type: str, 
-                      algorithm: str, use_case: str, training_table: str,
-                      feature_store_enabled: bool = False) -> dict:
+                      algorithm: str, use_case: str, training_table: str) -> dict:
     """Get standard MLflow run tags for consistent organization."""
     return {
         "project": "{project}",
         "domain": domain,
         "model_name": model_name,
-        "model_type": model_type,  # "regression" or "classification"
-        "algorithm": algorithm,     # "xgboost", "gradient_boosting", "prophet"
+        "model_type": model_type,
+        "algorithm": algorithm,
         "layer": "ml",
-        "team": "data_science",
         "use_case": use_case,
-        "feature_store_enabled": str(feature_store_enabled).lower(),
+        "feature_engineering": "unity_catalog",
         "training_data": training_table
     }
 
@@ -450,307 +399,231 @@ def get_parameters():
     catalog = dbutils.widgets.get("catalog")
     gold_schema = dbutils.widgets.get("gold_schema")
     feature_schema = dbutils.widgets.get("feature_schema")
-    model_name = dbutils.widgets.get("model_name")
     
     print(f"Catalog: {catalog}")
     print(f"Gold Schema: {gold_schema}")
     print(f"Feature Schema: {feature_schema}")
-    print(f"Model Name: {model_name}")
     
-    return catalog, gold_schema, feature_schema, model_name
+    return catalog, gold_schema, feature_schema
 
 
 # =============================================================================
-# DATA PREPARATION
+# FEATURE ENGINEERING: Create Training Set with FeatureLookup
 # =============================================================================
-def prepare_training_data(
+def create_training_set_with_features(
     spark: SparkSession,
+    fe: FeatureEngineeringClient,
     catalog: str,
     gold_schema: str,
     feature_schema: str
 ):
     """
-    Prepare training data with feature engineering.
+    Create training set using Unity Catalog Feature Engineering.
     
-    SCHEMA-GROUNDED: All columns verified against Gold layer YAML.
-    
-    ⚠️ SCD2 Tables (have is_current): dim_{entity1}, dim_{entity2}
-       ALWAYS filter: .filter(col("is_current") == True)
-       
-    ⚠️ Regular Tables (no is_current): dim_date, dim_location
-       Do NOT filter.
+    ⚠️ CRITICAL RULES:
+    1. base_df contains ONLY lookup keys + label column
+    2. All features come from FeatureLookup
+    3. Label column must be CAST to correct type (INT for classification, DOUBLE for regression)
+    4. lookup_key MUST match feature table primary keys EXACTLY
     """
-    print("\n" + "="*80)
-    print("Preparing training data")
-    print("="*80)
+    model_name = "{model_name}"
+    feature_table = f"{catalog}.{feature_schema}.cost_features"  # Update per model
+    label_column = "daily_cost"  # Update per model
     
-    # Load Gold layer tables
-    fact_table = spark.table(f"{catalog}.{gold_schema}.fact_{name}")
+    print(f"\n{'='*80}")
+    print(f"Creating Training Set for {model_name}")
+    print(f"Feature Table: {feature_table}")
+    print(f"Label Column: {label_column}")
+    print(f"{'='*80}")
     
-    # ✅ SCD2 dimension - filter for current records
-    dim_{entity} = (
-        spark.table(f"{catalog}.{gold_schema}.dim_{entity}")
-        .filter(col("is_current") == True)
-    )
-    
-    # Create training labels
-    training_labels = (
-        fact_table
-        .select(
-            "{entity}_id",
-            "{date_column}",
-            "{target_column}",  # Label
-            # Additional columns for feature engineering
-        )
-        # Add temporal features
-        .withColumn("month", month("{date_column}"))
-        .withColumn("quarter", quarter("{date_column}"))
-        .withColumn("day_of_week", dayofweek("{date_column}"))
-        .withColumn("is_weekend", dayofweek("{date_column}").isin([1, 7]).cast("double"))
-    )
-    
-    # Join with feature tables
-    feature_table = spark.table(f"{catalog}.{feature_schema}.{entity}_features")
-    
-    training_df = (
-        training_labels
-        .join(feature_table.drop("feature_timestamp"), "{entity}_id", "left")
-        .fillna(0)  # Fill nulls for numeric columns
-    )
-    
-    # Convert to Pandas for sklearn/xgboost
-    pdf = training_df.toPandas()
-    
-    print(f"✓ Training data prepared: {pdf.shape}")
-    
-    return pdf, training_labels
-
-
-def preprocess_features(pdf: pd.DataFrame, target_col: str):
-    """
-    Preprocess features for model training.
-    
-    ⚠️ CRITICAL: Document ALL transformations - batch inference MUST replicate exactly.
-    
-    Transformations Applied:
-    1. Convert Spark DECIMAL to float (XGBoost can't handle Decimal)
-    2. Encode categorical columns
-    3. Handle datetime columns
-    4. Fill NaN values
-    """
-    print("\n" + "="*80)
-    print("Preprocessing features")
-    print("="*80)
-    
-    # 1. Convert Spark DECIMAL to float (REQUIRED - XGBoost can't handle Decimal)
-    decimal_cols = ['revenue', 'price', 'amount', 'value']
-    for col_name in decimal_cols:
-        if col_name in pdf.columns:
-            pdf[col_name] = pd.to_numeric(pdf[col_name], errors='coerce')
-    
-    # 2. Encode categorical columns (must match inference)
-    categorical_cols = ['{entity}_type', 'category', 'region', 'country']
-    for col_name in categorical_cols:
-        if col_name in pdf.columns and pdf[col_name].dtype == 'object':
-            pdf[col_name] = pd.Categorical(pdf[col_name]).codes
-    
-    # 3. Handle datetime columns
-    date_cols = ['{date_column}']
-    for col_name in date_cols:
-        if col_name in pdf.columns:
-            pdf[col_name] = pd.to_datetime(pdf[col_name])
-    
-    # 4. Fill NaN values
-    pdf = pdf.fillna(0)
-    
-    # Separate features and label
-    exclude_cols = [
-        '{entity}_id', '{date_column}', target_col,
-        'feature_timestamp'
+    # Features to look up (MUST exist in feature table)
+    feature_names = [
+        "daily_dbu", "avg_dbu_7d", "avg_dbu_30d", 
+        "dbu_change_pct_1d", "is_weekend", "day_of_week"
     ]
-    feature_cols = [c for c in pdf.columns if c not in exclude_cols]
     
-    X = pdf[feature_cols]
-    y = pdf[target_col]
+    # Create FeatureLookup
+    # ⚠️ lookup_key MUST match feature table primary keys EXACTLY
+    feature_lookups = [
+        FeatureLookup(
+            table_name=feature_table,
+            feature_names=feature_names,
+            lookup_key=["workspace_id", "usage_date"]  # Must match feature table PKs
+        )
+    ]
     
-    print(f"Feature matrix: {X.shape}")
-    print(f"Features: {list(X.columns)[:10]}... ({len(X.columns)} total)")
+    # ⚠️ CRITICAL: base_df has ONLY lookup keys + label
+    # ⚠️ CRITICAL: Cast label to correct type (DOUBLE for regression, INT for classification)
+    base_df = (
+        spark.table(feature_table)
+        .select(
+            "workspace_id", 
+            "usage_date",
+            F.col(label_column).cast("double").alias(label_column)  # Cast for regression
+        )
+        .filter(F.col(label_column).isNotNull())
+        .distinct()
+    )
     
-    return X, y, feature_cols
+    record_count = base_df.count()
+    print(f"  Base DataFrame records: {record_count}")
+    
+    if record_count == 0:
+        raise ValueError(f"No records found for training! Check {feature_table}")
+    
+    # Create training set - features are looked up automatically
+    training_set = fe.create_training_set(
+        df=base_df,
+        feature_lookups=feature_lookups,
+        label=label_column,
+        exclude_columns=["workspace_id", "usage_date"]  # Exclude lookup keys from features
+    )
+    
+    # Load as DataFrame for training
+    training_df = training_set.load_df()
+    
+    print(f"✓ Training set created")
+    print(f"  Columns: {training_df.columns}")
+    print(f"  Records: {training_df.count()}")
+    
+    return training_set, training_df, feature_names, label_column
 
 
 # =============================================================================
 # MODEL TRAINING
 # =============================================================================
-def train_model(X_train, y_train, X_val, y_val):
+def prepare_and_train(training_df, feature_names, label_column):
     """
-    Train {algorithm} model.
+    Prepare data and train model.
     
-    Hyperparameters optimized for {use_case}.
+    ⚠️ CRITICAL: Convert all DECIMAL columns to float64 before training.
+    MLflow signatures don't support DecimalType.
     """
-    print("\n" + "="*80)
-    print("Training model")
-    print("="*80)
+    print(f"\n{'='*80}")
+    print("Preparing and Training Model")
+    print(f"{'='*80}")
     
-    model = XGBRegressor(  # or XGBClassifier for classification
-        max_depth=6,
-        learning_rate=0.1,
+    pdf = training_df.toPandas()
+    
+    # ⚠️ CRITICAL: Cast all numeric columns to float64 (handles DECIMAL)
+    for col in feature_names:
+        if col in pdf.columns:
+            pdf[col] = pd.to_numeric(pdf[col], errors='coerce')
+    pdf = pdf.fillna(0).replace([np.inf, -np.inf], 0)
+    
+    X = pdf[feature_names].astype('float64')
+    y = pdf[label_column].astype('float64')  # DOUBLE for regression
+    # For classification: y = pdf[label_column].astype(int)
+    
+    # Train/test split
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+    
+    print(f"  Training set: {len(X_train)} samples")
+    print(f"  Test set: {len(X_test)} samples")
+    
+    # Train model
+    model = GradientBoostingRegressor(
         n_estimators=100,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        objective='reg:squarederror',  # or 'binary:logistic'
-        random_state=42,
-        n_jobs=-1
+        max_depth=5,
+        learning_rate=0.1,
+        random_state=42
     )
+    model.fit(X_train, y_train)
     
-    model.fit(
-        X_train, y_train,
-        eval_set=[(X_val, y_val)],
-        verbose=False
-    )
-    
-    print(f"✓ Model trained with {model.n_estimators} trees")
-    
-    return model
-
-
-def evaluate_model(model, X_train, y_train, X_val, y_val):
-    """
-    Evaluate model and return metrics.
-    """
-    print("\n" + "="*80)
-    print("Evaluating model")
-    print("="*80)
-    
+    # Evaluate
     train_pred = model.predict(X_train)
-    val_pred = model.predict(X_val)
+    test_pred = model.predict(X_test)
     
-    # Regression metrics
     metrics = {
         "train_rmse": np.sqrt(mean_squared_error(y_train, train_pred)),
-        "val_rmse": np.sqrt(mean_squared_error(y_val, val_pred)),
-        "train_mae": mean_absolute_error(y_train, train_pred),
-        "val_mae": mean_absolute_error(y_val, val_pred),
+        "test_rmse": np.sqrt(mean_squared_error(y_test, test_pred)),
         "train_r2": r2_score(y_train, train_pred),
-        "val_r2": r2_score(y_val, val_pred),
-        # MAPE
-        "train_mape": np.mean(np.abs((y_train - train_pred) / (y_train + 1))) * 100,
-        "val_mape": np.mean(np.abs((y_val - val_pred) / (y_val + 1))) * 100
+        "test_r2": r2_score(y_test, test_pred)
     }
     
-    print("\nModel Performance:")
-    print(f"  Validation MAPE: {metrics['val_mape']:.2f}%")
-    print(f"  Validation RMSE: {metrics['val_rmse']:.4f}")
-    print(f"  Validation R²: {metrics['val_r2']:.4f}")
+    hyperparams = {
+        "n_estimators": 100,
+        "max_depth": 5,
+        "learning_rate": 0.1,
+        "num_features": len(feature_names)
+    }
     
-    # Feature importance
-    feature_importance = pd.DataFrame({
-        'feature': X_train.columns,
-        'importance': model.feature_importances_
-    }).sort_values('importance', ascending=False)
+    print(f"\n  Test RMSE: {metrics['test_rmse']:.4f}")
+    print(f"  Test R²: {metrics['test_r2']:.4f}")
     
-    print("\nTop 10 Most Important Features:")
-    print(feature_importance.head(10).to_string(index=False))
-    
-    return metrics, feature_importance
+    return model, metrics, hyperparams, X_train
 
 
 # =============================================================================
-# MODEL LOGGING (with all required components for UC)
+# MODEL LOGGING WITH FEATURE ENGINEERING (CRITICAL)
 # =============================================================================
-def log_model_with_mlflow(
+def log_model_with_feature_engineering(
+    fe: FeatureEngineeringClient,
     model,
+    training_set,
     X_train: pd.DataFrame,
-    feature_cols: list,
     metrics: dict,
-    feature_importance: pd.DataFrame,
-    model_name: str,
+    hyperparams: dict,
     catalog: str,
-    feature_schema: str,
-    gold_schema: str,
-    experiment_name: str,
-    spark
+    feature_schema: str
 ):
     """
-    Log model to MLflow with best practices.
+    Log model using fe.log_model for automatic feature retrieval at inference.
     
-    ⚠️ CRITICAL: All logging MUST be inside mlflow.start_run() context!
+    ⚠️ CRITICAL: This embeds feature lookup metadata in the model.
+    ⚠️ CRITICAL: Must provide input_example AND signature for Unity Catalog.
     """
-    print("\n" + "="*80)
-    print("Logging model to MLflow")
-    print("="*80)
+    model_name = "{model_name}"
+    registered_name = f"{catalog}.{feature_schema}.{model_name}"
     
-    # 3-level name for Unity Catalog
-    registered_model_name = f"{catalog}.{feature_schema}.{model_name}"
-    print(f"Registered Model: {registered_model_name}")
+    print(f"\n{'='*80}")
+    print(f"Logging Model with Feature Engineering: {registered_name}")
+    print(f"{'='*80}")
     
-    # Descriptive run name
-    run_name = get_run_name(model_name, "xgboost", "v1")
+    mlflow.autolog(disable=True)
     
-    with mlflow.start_run(run_name=run_name) as run:
-        
-        # 1. Set tags (before other logging)
-        tags = get_standard_tags(
+    with mlflow.start_run(run_name=get_run_name(model_name, "gradient_boosting")) as run:
+        # Set tags
+        mlflow.set_tags(get_standard_tags(
             model_name=model_name,
             domain="{domain}",
             model_type="regression",
-            algorithm="xgboost",
+            algorithm="gradient_boosting",
             use_case="{use_case}",
-            training_table=f"{catalog}.{gold_schema}.fact_{name}",
-            feature_store_enabled=False
-        )
-        mlflow.set_tags(tags)
+            training_table=f"{catalog}.{feature_schema}.cost_features"
+        ))
         
-        # 2. Log dataset (INSIDE run context!)
-        log_training_dataset(spark, catalog, gold_schema, "fact_{name}")
-        
-        # 3. Log hyperparameters
-        mlflow.log_params({
-            "max_depth": model.max_depth,
-            "learning_rate": model.learning_rate,
-            "n_estimators": model.n_estimators,
-            "subsample": model.subsample,
-            "colsample_bytree": model.colsample_bytree,
-            "num_features": len(feature_cols),
-            "objective": "reg:squarederror"
-        })
-        
-        # 4. Log metrics
+        # Log params and metrics
+        mlflow.log_params(hyperparams)
         mlflow.log_metrics(metrics)
         
-        # 5. Log feature importance artifact
-        feature_importance_path = "feature_importance.csv"
-        feature_importance.to_csv(feature_importance_path, index=False)
-        mlflow.log_artifact(feature_importance_path)
+        # ⚠️ CRITICAL: Create input_example and signature (REQUIRED for UC)
+        input_example = X_train.head(5).astype('float64')
+        sample_predictions = model.predict(input_example)
+        signature = infer_signature(input_example, sample_predictions)
         
-        # 6. Create signature with BOTH input AND output (REQUIRED for UC)
-        sample_input = X_train.head(5)
-        sample_output = model.predict(sample_input)  # Include this!
-        signature = infer_signature(sample_input, sample_output)
-        
-        # 7. Log and register model
-        mlflow.xgboost.log_model(
-            model,
+        # ⚠️ CRITICAL: Use fe.log_model to embed feature lookup metadata
+        fe.log_model(
+            model=model,
             artifact_path="model",
-            signature=signature,
-            input_example=sample_input,
-            registered_model_name=registered_model_name
+            flavor=mlflow.sklearn,
+            training_set=training_set,  # Embeds feature lookup spec
+            registered_model_name=registered_name,
+            input_example=input_example,
+            signature=signature
         )
         
-        run_id = run.info.run_id
-        model_uri = f"runs:/{run_id}/model"
-        
-        print(f"\n✓ Model logged")
-        print(f"  Run ID: {run_id}")
-        print(f"  Model URI: {model_uri}")
-        print(f"  Registered Model: {registered_model_name}")
+        print(f"✓ Model logged with Feature Engineering metadata")
+        print(f"  Run ID: {run.info.run_id}")
+        print(f"  Registered: {registered_name}")
         
         return {
-            "run_id": run_id,
-            "run_name": run_name,
-            "model_uri": model_uri,
-            "registered_model_name": registered_model_name,
-            "experiment_name": experiment_name
+            "run_id": run.info.run_id,
+            "model_name": model_name,
+            "registered_as": registered_name,
+            "metrics": metrics
         }
 
 
@@ -758,76 +631,45 @@ def log_model_with_mlflow(
 # MAIN ENTRY POINT
 # =============================================================================
 def main():
-    """Main training pipeline."""
+    """Main training pipeline with Feature Engineering."""
     
-    catalog, gold_schema, feature_schema, model_name = get_parameters()
+    catalog, gold_schema, feature_schema = get_parameters()
     
-    spark = SparkSession.builder.appName(f"{model_name} Training").getOrCreate()
+    spark = SparkSession.builder.appName("{Model Name} Training").getOrCreate()
+    fe = FeatureEngineeringClient()
     
-    # Disable autolog to control what's logged
     mlflow.autolog(disable=True)
-    
-    # Setup experiment
-    experiment_name = setup_mlflow_experiment(model_name)
+    setup_mlflow_experiment("{model_name}")
     
     try:
-        # Prepare data
-        pdf, training_labels = prepare_training_data(
-            spark, catalog, gold_schema, feature_schema
+        # Create training set with feature lookups
+        training_set, training_df, feature_names, label_column = create_training_set_with_features(
+            spark, fe, catalog, gold_schema, feature_schema
         )
         
-        # Preprocess
-        X, y, feature_cols = preprocess_features(pdf, "{target_column}")
-        
-        # Train/Val split
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=0.2, random_state=42
+        # Prepare and train model
+        model, metrics, hyperparams, X_train = prepare_and_train(
+            training_df, feature_names, label_column
         )
         
-        print(f"\nTrain set: {X_train.shape}")
-        print(f"Validation set: {X_val.shape}")
-        
-        # Train model
-        model = train_model(X_train, y_train, X_val, y_val)
-        
-        # Evaluate
-        metrics, feature_importance = evaluate_model(
-            model, X_train, y_train, X_val, y_val
-        )
-        
-        # Log to MLflow
-        run_info = log_model_with_mlflow(
-            model=model,
-            X_train=X_train,
-            feature_cols=feature_cols,
-            metrics=metrics,
-            feature_importance=feature_importance,
-            model_name=model_name,
-            catalog=catalog,
-            feature_schema=feature_schema,
-            gold_schema=gold_schema,
-            experiment_name=experiment_name,
-            spark=spark
+        # Log model with feature engineering metadata
+        result = log_model_with_feature_engineering(
+            fe, model, training_set, X_train,
+            metrics, hyperparams, catalog, feature_schema
         )
         
         print("\n" + "="*80)
         print("✓ Training completed successfully!")
+        print(f"  Model: {result['registered_as']}")
+        print(f"  Test R²: {result['metrics']['test_r2']:.4f}")
         print("="*80)
-        
-        # Check performance target
-        if metrics['val_mape'] < {target_mape}:
-            print(f"\n✅ Model meets MAPE target (<{target_mape}%)")
-        else:
-            print(f"\n⚠️ Model does not meet MAPE target")
         
     except Exception as e:
         import traceback
         print(f"\n❌ Error: {str(e)}")
         print(traceback.format_exc())
-        # ✅ REQUIRED: Signal failure with message
         dbutils.notebook.exit(f"FAILED: {str(e)}")
     
-    # ✅ REQUIRED: Signal success to Databricks
     dbutils.notebook.exit("SUCCESS")
 
 
@@ -837,224 +679,191 @@ if __name__ == "__main__":
 
 ---
 
-## Step 3: Batch Inference Pipeline
+## Step 3: Batch Inference with `fe.score_batch`
 
-### Inference Script Template
+### ⚠️ CRITICAL: Use `fe.score_batch` for Automatic Feature Retrieval
 
 ```python
 # Databricks notebook source
 """
-Batch Inference Pipeline for ML Models
+Batch Inference Pipeline
 
-Performs batch scoring using registered models.
-Supports automatic feature lookup and preprocessing.
-
-⚠️ CRITICAL: Preprocessing MUST exactly match training preprocessing.
+Uses fe.score_batch for automatic feature retrieval from Unity Catalog.
+Features are looked up using the metadata embedded during fe.log_model.
 """
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.functions import col, lit, current_timestamp, current_date, when
+from databricks.feature_engineering import FeatureEngineeringClient
 import mlflow
-import pandas as pd
+from mlflow import MlflowClient
 from datetime import datetime
-import builtins  # For built-in max function (avoid conflict with PySpark max)
+
+mlflow.set_registry_uri("databricks-uc")
 
 
 def get_parameters():
     """Get job parameters from dbutils widgets."""
     catalog = dbutils.widgets.get("catalog")
-    model_name = dbutils.widgets.get("model_name")
-    input_table = dbutils.widgets.get("input_table")
-    output_table = dbutils.widgets.get("output_table")
-    model_version = dbutils.widgets.get("model_version")  # "latest" or specific version
+    gold_schema = dbutils.widgets.get("gold_schema")
     feature_schema = dbutils.widgets.get("feature_schema")
     
     print(f"Catalog: {catalog}")
-    print(f"Model Name: {model_name}")
+    print(f"Gold Schema: {gold_schema}")
     print(f"Feature Schema: {feature_schema}")
-    print(f"Input Table: {input_table}")
-    print(f"Output Table: {output_table}")
-    print(f"Model Version: {model_version}")
     
-    return catalog, model_name, input_table, output_table, model_version, feature_schema
+    return catalog, gold_schema, feature_schema
 
 
-def load_model(catalog: str, feature_schema: str, model_name: str, model_version: str):
-    """
-    Load model from Unity Catalog Model Registry.
-    """
-    print("\n" + "="*80)
-    print("Loading model")
-    print("="*80)
-    
-    # Construct model URI with 3-level naming
+def load_model_uri(catalog: str, feature_schema: str, model_name: str) -> str:
+    """Get latest model version URI from Unity Catalog."""
     full_model_name = f"{catalog}.{feature_schema}.{model_name}"
+    client = MlflowClient()
     
-    client = mlflow.tracking.MlflowClient()
+    versions = client.search_model_versions(f"name='{full_model_name}'")
+    if not versions:
+        raise ValueError(f"No model versions found: {full_model_name}")
     
-    if model_version == "latest":
-        model_versions = client.search_model_versions(f"name='{full_model_name}'")
-        if model_versions:
-            # Use builtins.max to avoid conflict with PySpark's max function
-            latest_version = builtins.max(model_versions, key=lambda x: int(x.version))
-            version_num = latest_version.version
-            print(f"Found latest version: {version_num}")
-            model_uri = f"models:/{full_model_name}/{version_num}"
-        else:
-            raise Exception(f"No model versions found for {full_model_name}")
-    else:
-        model_uri = f"models:/{full_model_name}/{model_version}"
+    latest = max(versions, key=lambda v: int(v.version))
+    model_uri = f"models:/{full_model_name}/{latest.version}"
     
-    print(f"Full Model Name: {full_model_name}")
-    print(f"Model URI: {model_uri}")
+    print(f"  Model: {full_model_name}")
+    print(f"  Version: {latest.version}")
+    print(f"  URI: {model_uri}")
     
     return model_uri
 
 
-def prepare_input_data(spark: SparkSession, input_table: str, model_name: str):
-    """
-    Prepare input data for batch scoring.
-    """
-    print("\n" + "="*80)
-    print("Preparing input data for scoring")
-    print("="*80)
-    
-    input_df = spark.table(input_table)
-    
-    # Model-specific preparation
-    if "{model_1}" in model_name:
-        scoring_df = (
-            input_df
-            .select("{entity}_id", "{date_column}")
-            .distinct()
-            # Add temporal features matching training
-            .withColumn("month", F.month("{date_column}"))
-            .withColumn("quarter", F.quarter("{date_column}"))
-        )
-    # ... additional model types
-    else:
-        raise ValueError(f"Unknown model type: {model_name}")
-    
-    record_count = scoring_df.count()
-    print(f"Scoring data: {record_count} records")
-    
-    return scoring_df
-
-
-def score_batch(
+def score_with_feature_engineering(
     spark: SparkSession,
+    fe: FeatureEngineeringClient,
     model_uri: str,
     scoring_df,
-    model_name: str,
-    catalog: str,
-    feature_schema: str
+    output_table: str,
+    model_name: str
 ):
     """
-    Score batch data.
+    Score batch data using fe.score_batch.
     
-    ⚠️ CRITICAL: Preprocessing MUST exactly replicate training preprocessing.
+    ⚠️ CRITICAL: scoring_df should contain ONLY lookup keys.
+    Features are automatically retrieved from Feature Tables.
     """
-    print("\n" + "="*80)
-    print("Scoring batch data")
-    print("="*80)
+    print(f"\n{'='*80}")
+    print(f"Scoring with fe.score_batch")
+    print(f"{'='*80}")
     
-    # Join with feature tables
-    features_df = spark.table(f"{catalog}.{feature_schema}.{entity}_features")
-    scoring_df = scoring_df.join(features_df, "{entity}_id", "inner")
+    record_count = scoring_df.count()
+    print(f"  Input records: {record_count}")
     
-    print(f"Joined scoring data: {scoring_df.count()} records")
-    
-    # Convert to Pandas
-    pdf = scoring_df.toPandas()
-    
-    # ⚠️ CRITICAL: Replicate EXACT preprocessing from training
-    
-    # 1. Convert boolean columns to float (before feature selection)
-    for col_name in pdf.columns:
-        if pdf[col_name].dtype == 'bool':
-            pdf[col_name] = pdf[col_name].astype(float)
-    
-    # 2. Get feature columns (exclude keys and timestamps)
-    exclude_cols = ['{entity}_id', 'feature_date', '{date_column}', 'feature_timestamp']
-    feature_cols = [c for c in pdf.columns if c not in exclude_cols]
-    
-    # 3. Encode categorical columns (same as training)
-    categorical_cols = ['{entity}_type', 'category', 'region', 'country']
-    for col_name in categorical_cols:
-        if col_name in pdf.columns and pdf[col_name].dtype == 'object':
-            pdf[col_name] = pd.Categorical(pdf[col_name]).codes
-    
-    # 4. Convert numeric types (handles Decimal, int, object)
-    for col_name in feature_cols:
-        if col_name in categorical_cols:
-            continue
-        try:
-            pdf[col_name] = pd.to_numeric(pdf[col_name], errors='coerce')
-        except (ValueError, TypeError):
-            pass
-    
-    # Load model and predict
-    model = mlflow.pyfunc.load_model(model_uri)
-    X = pdf[feature_cols].fillna(0)
-    pdf['prediction'] = model.predict(X)
-    
-    # Convert back to Spark
-    predictions_df = spark.createDataFrame(pdf)
+    # ⚠️ fe.score_batch automatically retrieves features using embedded metadata
+    predictions_df = fe.score_batch(
+        model_uri=model_uri,
+        df=scoring_df  # Contains only lookup keys
+    )
     
     # Add metadata
     predictions_df = (
         predictions_df
-        .withColumn("model_name", lit(model_name))
-        .withColumn("model_uri", lit(model_uri))
-        .withColumn("scored_at", current_timestamp())
-        .withColumn("scoring_date", current_date())
+        .withColumn("model_name", F.lit(model_name))
+        .withColumn("model_uri", F.lit(model_uri))
+        .withColumn("scored_at", F.current_timestamp())
     )
     
-    # Rename prediction column based on model type
-    predictions_df = predictions_df.withColumnRenamed("prediction", "predicted_{target}")
-    
-    print(f"✓ Scored {predictions_df.count()} records")
-    
-    return predictions_df
-
-
-def save_predictions(spark, predictions_df, output_table: str):
-    """Save predictions to Delta table."""
-    print("\n" + "="*80)
-    print("Saving predictions")
-    print("="*80)
-    
+    # Save predictions
     predictions_df.write \
         .format("delta") \
         .mode("overwrite") \
         .option("mergeSchema", "true") \
         .saveAsTable(output_table)
     
-    final_count = spark.table(output_table).count()
-    print(f"✓ Saved {final_count} predictions to {output_table}")
+    saved_count = spark.table(output_table).count()
+    print(f"✓ Saved {saved_count} predictions to {output_table}")
+    
+    return saved_count
+
+
+def run_inference_for_model(
+    spark: SparkSession,
+    fe: FeatureEngineeringClient,
+    catalog: str,
+    feature_schema: str,
+    model_name: str,
+    feature_table: str,
+    lookup_keys: list
+):
+    """Run inference for a single model."""
+    print(f"\n{'='*80}")
+    print(f"Running Inference: {model_name}")
+    print(f"{'='*80}")
+    
+    try:
+        # Load model URI
+        model_uri = load_model_uri(catalog, feature_schema, model_name)
+        
+        # ⚠️ CRITICAL: Select ONLY lookup keys for scoring
+        scoring_df = spark.table(feature_table).select(*lookup_keys).distinct()
+        
+        # Score with fe.score_batch
+        output_table = f"{catalog}.{feature_schema}.{model_name}_predictions"
+        count = score_with_feature_engineering(
+            spark, fe, model_uri, scoring_df, output_table, model_name
+        )
+        
+        return {"status": "SUCCESS", "model": model_name, "records": count}
+        
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        return {"status": "FAILED", "model": model_name, "error": str(e)}
 
 
 def main():
     """Main batch inference pipeline."""
     
-    catalog, model_name, input_table, output_table, model_version, feature_schema = get_parameters()
+    catalog, gold_schema, feature_schema = get_parameters()
     
     spark = SparkSession.builder.appName("Batch Inference").getOrCreate()
+    fe = FeatureEngineeringClient()
     
-    try:
-        model_uri = load_model(catalog, feature_schema, model_name, model_version)
-        scoring_df = prepare_input_data(spark, input_table, model_name)
-        predictions_df = score_batch(spark, model_uri, scoring_df, model_name, catalog, feature_schema)
-        save_predictions(spark, predictions_df, output_table)
-        
-        print("\n" + "="*80)
-        print("✓ Batch inference completed successfully!")
-        print("="*80)
-        
-    except Exception as e:
-        print(f"\n❌ Error during batch inference: {str(e)}")
-        raise
+    # Define models to score
+    models = [
+        {
+            "name": "budget_forecaster",
+            "feature_table": f"{catalog}.{feature_schema}.cost_features",
+            "lookup_keys": ["workspace_id", "usage_date"]
+        },
+        {
+            "name": "cost_anomaly_detector",
+            "feature_table": f"{catalog}.{feature_schema}.cost_features",
+            "lookup_keys": ["workspace_id", "usage_date"]
+        },
+        # Add more models...
+    ]
+    
+    results = []
+    for model_config in models:
+        result = run_inference_for_model(
+            spark, fe, catalog, feature_schema,
+            model_config["name"],
+            model_config["feature_table"],
+            model_config["lookup_keys"]
+        )
+        results.append(result)
+    
+    # Summary
+    success = sum(1 for r in results if r["status"] == "SUCCESS")
+    failed = sum(1 for r in results if r["status"] == "FAILED")
+    
+    print("\n" + "="*80)
+    print(f"BATCH INFERENCE COMPLETE")
+    print(f"  Success: {success}/{len(results)}")
+    print(f"  Failed: {failed}/{len(results)}")
+    print("="*80)
+    
+    if failed > 0:
+        failed_models = [r["model"] for r in results if r["status"] == "FAILED"]
+        dbutils.notebook.exit(f"PARTIAL_FAILURE: {failed_models}")
+    
+    dbutils.notebook.exit("SUCCESS")
 
 
 if __name__ == "__main__":
@@ -1065,16 +874,47 @@ if __name__ == "__main__":
 
 ## Step 4: Asset Bundle Jobs
 
-### Training Orchestrator Job
+### Feature Pipeline Job
 
 ```yaml
-# resources/ml/ml_training_orchestrator_job.yml
-
 resources:
   jobs:
-    ml_training_orchestrator_job:
-      name: "[${bundle.target}] ML Training Orchestrator"
-      description: "Orchestrates training of all ML models"
+    ml_feature_pipeline_job:
+      name: "[${bundle.target}] ML Feature Pipeline"
+      description: "Creates and updates feature tables in Unity Catalog"
+      
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "4"
+            dependencies:
+              - "databricks-feature-engineering>=0.6.0"
+      
+      tasks:
+        - task_key: create_feature_tables
+          environment_key: default
+          notebook_task:
+            notebook_path: ../../src/{project}_ml/features/create_feature_tables.py
+            base_parameters:
+              catalog: ${var.catalog}
+              gold_schema: ${var.gold_schema}
+              feature_schema: ${var.feature_schema}
+          timeout_seconds: 3600
+      
+      tags:
+        environment: ${bundle.target}
+        layer: ml
+        job_type: feature_engineering
+```
+
+### Training Pipeline Job
+
+```yaml
+resources:
+  jobs:
+    ml_training_pipeline_job:
+      name: "[${bundle.target}] ML Training Pipeline"
+      description: "Trains all ML models with Feature Engineering"
       
       environments:
         - environment_key: default
@@ -1083,69 +923,49 @@ resources:
             dependencies:
               - "mlflow>=3.1"
               - "databricks-feature-engineering>=0.6.0"
-              - "xgboost==2.0.3"
-              - "scikit-learn==1.3.2"
-              - "pandas==2.1.4"
-              - "numpy==1.26.2"
+              - "scikit-learn>=1.3.0"
+              - "xgboost>=2.0.0"
       
       tasks:
-        # Train models in PARALLEL (no dependencies between models)
-        
-        - task_key: train_{model_1}
+        # Feature Engineering models (parallel)
+        - task_key: train_budget_forecaster
           environment_key: default
           notebook_task:
-            notebook_path: ../../src/{project}_ml/models/{model_1}/train.py
+            notebook_path: ../../src/{project}_ml/cost/train_budget_forecaster.py
             base_parameters:
               catalog: ${var.catalog}
               gold_schema: ${var.gold_schema}
-              feature_schema: ${var.ml_schema}
-              model_name: {model_1}
+              feature_schema: ${var.feature_schema}
           timeout_seconds: 3600
         
-        - task_key: train_{model_2}
+        - task_key: train_cost_anomaly_detector
           environment_key: default
           notebook_task:
-            notebook_path: ../../src/{project}_ml/models/{model_2}/train.py
+            notebook_path: ../../src/{project}_ml/cost/train_cost_anomaly_detector.py
             base_parameters:
               catalog: ${var.catalog}
               gold_schema: ${var.gold_schema}
-              feature_schema: ${var.ml_schema}
-              model_name: {model_2}
+              feature_schema: ${var.feature_schema}
           timeout_seconds: 3600
         
         # Add more models...
       
-      # Schedule: Weekly retraining on Sunday at 2 AM
-      schedule:
-        quartz_cron_expression: "0 0 2 ? * SUN"
-        timezone_id: "America/Los_Angeles"
-        pause_status: PAUSED  # Enable manually in production
-      
-      timeout_seconds: 14400  # 4 hours total
-      
-      email_notifications:
-        on_failure:
-          - data-engineering@company.com
+      timeout_seconds: 14400  # 4 hours
       
       tags:
         environment: ${bundle.target}
-        project: {project}
         layer: ml
-        compute_type: serverless
         job_type: training
-        orchestrator: "true"
 ```
 
-### Batch Inference Job
+### Inference Pipeline Job
 
 ```yaml
-# resources/ml/ml_batch_inference_job.yml
-
 resources:
   jobs:
-    ml_batch_inference_job:
-      name: "[${bundle.target}] ML Batch Inference"
-      description: "Batch scoring for ML models"
+    ml_inference_pipeline_job:
+      name: "[${bundle.target}] ML Inference Pipeline"
+      description: "Batch inference using fe.score_batch"
       
       environments:
         - environment_key: default
@@ -1154,309 +974,94 @@ resources:
             dependencies:
               - "mlflow>=3.1"
               - "databricks-feature-engineering>=0.6.0"
-              - "xgboost==2.0.3"
-              - "scikit-learn==1.3.2"
       
       tasks:
-        - task_key: score_{model_1}_predictions
+        - task_key: batch_inference
           environment_key: default
           notebook_task:
-            notebook_path: ../../src/{project}_ml/inference/batch_inference.py
-            base_parameters:
-              catalog: ${var.catalog}
-              feature_schema: ${var.ml_schema}
-              model_name: {model_1}
-              input_table: ${var.catalog}.${var.gold_schema}.fact_{source}
-              output_table: ${var.catalog}.${var.ml_schema}.{model_1}_predictions
-              model_version: latest
-          timeout_seconds: 1800
-        
-        - task_key: score_{model_2}_predictions
-          depends_on:
-            - task_key: score_{model_1}_predictions
-          environment_key: default
-          notebook_task:
-            notebook_path: ../../src/{project}_ml/inference/batch_inference.py
-            base_parameters:
-              catalog: ${var.catalog}
-              feature_schema: ${var.ml_schema}
-              model_name: {model_2}
-              input_table: ${var.catalog}.${var.gold_schema}.fact_{source}
-              output_table: ${var.catalog}.${var.ml_schema}.{model_2}_predictions
-              model_version: latest
-          timeout_seconds: 1800
-      
-      # Schedule: Daily at 4 AM (after data refresh)
-      schedule:
-        quartz_cron_expression: "0 0 4 * * ?"
-        timezone_id: "America/Los_Angeles"
-        pause_status: PAUSED
-      
-      timeout_seconds: 7200
-      
-      email_notifications:
-        on_failure:
-          - data-engineering@company.com
-      
-      tags:
-        environment: ${bundle.target}
-        project: {project}
-        layer: ml
-        compute_type: serverless
-        job_type: inference
-```
-
-### Feature Store Setup Job
-
-```yaml
-# resources/ml/ml_feature_store_setup_job.yml
-
-resources:
-  jobs:
-    ml_feature_store_setup_job:
-      name: "[${bundle.target}] ML Feature Store Setup"
-      description: "Creates feature tables in Unity Catalog"
-      
-      environments:
-        - environment_key: default
-          spec:
-            environment_version: "4"
-            dependencies:
-              - "databricks-feature-engineering>=0.6.0"
-      
-      tasks:
-        - task_key: setup_feature_tables
-          environment_key: default
-          notebook_task:
-            notebook_path: ../../src/{project}_ml/feature_store/setup_feature_tables.py
+            notebook_path: ../../src/{project}_ml/inference/batch_inference_all_models.py
             base_parameters:
               catalog: ${var.catalog}
               gold_schema: ${var.gold_schema}
-              feature_schema: ${var.ml_schema}
-          timeout_seconds: 1800
+              feature_schema: ${var.feature_schema}
+          timeout_seconds: 7200
+      
+      # Schedule: Daily after Gold layer refresh
+      schedule:
+        quartz_cron_expression: "0 0 5 * * ?"
+        timezone_id: "America/Los_Angeles"
+        pause_status: PAUSED
       
       tags:
         environment: ${bundle.target}
-        project: {project}
         layer: ml
-        compute_type: serverless
-        job_type: setup
+        job_type: inference
 ```
 
 ---
 
-## ⚠️ Critical Patterns & Common Mistakes
+## Validation Checklists
 
-### 1. Experiment Path
+### Feature Table Checklist
+- [ ] Primary keys defined and NOT NULL
+- [ ] All columns verified against Gold layer schema
+- [ ] Feature table has descriptive description
+- [ ] Rolling window aggregations use proper Window specs
+- [ ] NULL values filtered before table creation
 
-```python
-# ✅ CORRECT: /Shared/ path always works
-experiment_name = f"/Shared/{project}_ml_{model_name}"
+### Training Pipeline Checklist
+- [ ] Uses `FeatureLookup` for feature retrieval
+- [ ] `base_df` has ONLY lookup keys + label column
+- [ ] `lookup_key` matches feature table primary keys EXACTLY
+- [ ] Label column CAST to correct type (INT/DOUBLE)
+- [ ] All features CAST to float64 before training
+- [ ] `fe.log_model` used (NOT `mlflow.sklearn.log_model`)
+- [ ] `input_example` provided
+- [ ] `signature` includes BOTH input AND output
+- [ ] `training_set` passed to `fe.log_model`
+- [ ] Experiment uses `/Shared/` path
+- [ ] All helper functions inlined
+- [ ] `dbutils.notebook.exit()` called
 
-# ❌ WRONG: User path fails silently if subfolder doesn't exist
-experiment_name = f"/Users/{user}/subfolder/{model_name}"
-
-# ❌ WRONG: Asset Bundle experiments create duplicates with [dev] prefix
-# Never define experiments in resources/ml/ml_experiments.yml
-```
-
-### 2. Dataset Logging
-
-```python
-# ✅ CORRECT: Inside mlflow.start_run()
-with mlflow.start_run(run_name=run_name) as run:
-    dataset = mlflow.data.from_spark(df, table_name=table_name)
-    mlflow.log_input(dataset, context="training")  # ✅ Associates with run
-
-# ❌ WRONG: Outside run context
-dataset = mlflow.data.from_spark(df, table_name=table_name)
-mlflow.log_input(dataset)  # ❌ Won't appear in UI!
-with mlflow.start_run() as run:
-    pass  # Dataset not associated
-```
-
-### 3. Helper Functions (Module Imports)
-
-```python
-# ✅ CORRECT: Inline helpers in each notebook
-def setup_mlflow_experiment(model_name: str) -> str:
-    # Implementation here
-    pass
-
-# ❌ WRONG: Import from shared module - ModuleNotFoundError in serverless
-from utils.mlflow_setup import setup_mlflow_experiment
-```
-
-### 4. Notebook Exit Signal
-
-```python
-# ✅ CORRECT: Always signal exit
-def main():
-    try:
-        # ... training code ...
-    except Exception as e:
-        dbutils.notebook.exit(f"FAILED: {str(e)}")
-    
-    dbutils.notebook.exit("SUCCESS")  # ✅ Required
-
-# ❌ WRONG: No exit signal
-def main():
-    # ... training code ...
-    print("Done!")  # ❌ Job status unclear
-    
-# ❌ WRONG: spark.stop() prevents exit signal
-def main():
-    try:
-        pass
-    finally:
-        spark.stop()  # ❌ Prevents dbutils.notebook.exit()
-```
-
-### 5. Unity Catalog Model Signature
-
-```python
-# ✅ CORRECT: BOTH input AND output
-sample_input = X_train.head(5)
-sample_output = model.predict(sample_input)  # ✅ Include output!
-signature = infer_signature(sample_input, sample_output)
-
-# ❌ WRONG: Only input
-signature = infer_signature(sample_input)  # ❌ Missing output
-# Error: "Model signature must contain both input and output type specifications"
-```
-
-### 6. SCD2 Table Filtering
-
-```python
-# ✅ CORRECT: Filter SCD2 tables for current records
-dim_entity = (
-    spark.table(f"{catalog}.{schema}.dim_{entity}")
-    .filter(col("is_current") == True)  # ✅ Required for SCD2
-)
-
-# ❌ WRONG: No filter on SCD2 table
-dim_entity = spark.table(f"{catalog}.{schema}.dim_{entity}")  # Gets all versions!
-
-# ❌ WRONG: Filter non-SCD2 table
-dim_date = spark.table(f"{catalog}.{schema}.dim_date")
-dim_date.filter(col("is_current"))  # ❌ Column doesn't exist!
-```
-
-### 7. Preprocessing Consistency (Training ↔ Inference)
-
-```python
-# Training preprocessing
-pdf[col] = pd.to_numeric(pdf[col], errors='coerce')
-pdf[cat_col] = pd.Categorical(pdf[cat_col]).codes
-pdf = pdf.fillna(0)
-
-# ⚠️ Inference MUST replicate EXACTLY:
-# - Same column order
-# - Same type conversions
-# - Same categorical encoding
-# - Same fillna strategy
-```
+### Inference Pipeline Checklist
+- [ ] Uses `fe.score_batch` for automatic feature retrieval
+- [ ] Scoring DataFrame has ONLY lookup keys
+- [ ] Model URI points to latest version
+- [ ] Predictions saved with metadata columns
+- [ ] Error handling with proper exit signals
 
 ---
 
-## Validation Checklist
+## Common Errors and Solutions
 
-### Feature Store
-- [ ] Schema exists in Unity Catalog
-- [ ] Feature tables have descriptive names and descriptions
-- [ ] Primary keys are correct (single or composite)
-- [ ] All columns verified against Gold layer YAML
-
-### Training Pipeline
-- [ ] Experiment path uses `/Shared/` prefix
-- [ ] All helper functions are inlined (not imported)
-- [ ] Dataset logging is inside `mlflow.start_run()` context
-- [ ] Model signature includes BOTH input and output
-- [ ] `dbutils.notebook.exit()` called for success and failure
-- [ ] SCD2 tables filtered with `is_current == True`
-- [ ] Preprocessing documented for inference replication
-
-### Batch Inference
-- [ ] Preprocessing exactly matches training
-- [ ] Boolean columns converted to float before scoring
-- [ ] `builtins.max` used instead of PySpark `max`
-- [ ] Output table has metadata columns (model_name, scored_at)
-
-### Asset Bundle Jobs
-- [ ] `environments` block defined at job level
-- [ ] `environment_key: default` in every task
-- [ ] `base_parameters` (not `parameters`) for notebook_task
-- [ ] `${var.xxx}` format for variables
-- [ ] Schedule set to `PAUSED` in dev
-
----
-
-## Model Type Patterns
-
-### Regression (XGBoost)
-
-```python
-from xgboost import XGBRegressor
-
-model = XGBRegressor(
-    max_depth=6,
-    learning_rate=0.1,
-    n_estimators=100,
-    objective='reg:squarederror'
-)
-
-# Metrics: RMSE, MAE, R², MAPE
-```
-
-### Classification (XGBoost)
-
-```python
-from xgboost import XGBClassifier
-
-model = XGBClassifier(
-    max_depth=6,
-    learning_rate=0.1,
-    n_estimators=100,
-    objective='binary:logistic'
-)
-
-# Metrics: AUC-ROC, Precision, Recall, F1
-```
-
-### Time Series (Prophet)
-
-```python
-from prophet import Prophet
-
-model = Prophet(
-    yearly_seasonality=True,
-    weekly_seasonality=True,
-    seasonality_mode='multiplicative'
-)
-
-# Metrics: MAPE, RMSE, MAE, Coverage
-```
+| Error | Root Cause | Solution |
+|-------|------------|----------|
+| `Unable to find feature` | lookup_key doesn't match feature table PK | Verify lookup_key matches feature table primary keys |
+| `MlflowException: Model signature contains only inputs` | Missing output in signature | Add `model.predict(sample_input)` to `infer_signature` |
+| `DecimalType not supported` | DECIMAL columns in input_example | Cast to float64: `X.astype('float64')` |
+| `Incompatible input types` | Type mismatch at inference | Use `fe.score_batch` instead of manual preprocessing |
+| `Column 'X' cannot be resolved` | Column doesn't exist in feature table | Verify column names against feature table schema |
+| `ModuleNotFoundError` | Import from local module | Inline ALL helper functions |
+| `Experiment shows as "train"` | `/Users/` path failed silently | Use `/Shared/` experiment path |
+| `DataFrame contains column names that match` | Column conflict in FeatureLookup | Remove conflicting columns from base_df |
 
 ---
 
 ## References
 
-### MLflow 3.1+
-- [MLflow 3.0 Overview](https://learn.microsoft.com/en-us/azure/databricks/mlflow/mlflow-3-install)
-- [Logged Models](https://learn.microsoft.com/en-us/azure/databricks/mlflow/logged-model)
-- [Model Registry](https://learn.microsoft.com/en-us/azure/databricks/mlflow/model-registry-3)
+### Feature Engineering
+- [Unity Catalog Feature Engineering](https://docs.databricks.com/aws/en/machine-learning/feature-store/uc/index.html)
+- [FeatureLookup API](https://docs.databricks.com/aws/en/machine-learning/feature-store/uc/feature-tables-uc.html)
+- [fe.score_batch for Inference](https://docs.databricks.com/aws/en/machine-learning/feature-store/uc/feature-tables-uc.html#score-batch)
 
-### Feature Store
-- [Feature Engineering Client](https://learn.microsoft.com/en-us/azure/databricks/machine-learning/feature-store/uc/feature-tables-uc)
-- [Train Models with Feature Store](https://learn.microsoft.com/en-us/azure/databricks/machine-learning/feature-store/train-models-with-feature-store)
-
-### Model Serving
-- [Model Serving Overview](https://learn.microsoft.com/en-us/azure/databricks/machine-learning/model-serving/)
-- [Serverless Model Serving](https://learn.microsoft.com/en-us/azure/databricks/machine-learning/model-serving/serverless-optimized-deployments)
+### MLflow
+- [MLflow 3.1 Overview](https://learn.microsoft.com/en-us/azure/databricks/mlflow/mlflow-3-install)
+- [Unity Catalog Model Registry](https://learn.microsoft.com/en-us/azure/databricks/machine-learning/manage-model-lifecycle/)
+- [Model Signatures](https://mlflow.org/docs/latest/models.html#model-signature)
 
 ### Cursor Rules
-- [MLflow and ML Models Patterns](../.cursor/rules/ml/27-mlflow-mlmodels-patterns.mdc)
-- [Databricks Asset Bundles](../.cursor/rules/common/databricks-asset-bundles.mdc)
+- [MLflow and ML Models Patterns](../../.cursor/rules/ml/27-mlflow-mlmodels-patterns.mdc)
+- [Databricks Asset Bundles](../../.cursor/rules/common/02-databricks-asset-bundles.mdc)
 
 ---
 
@@ -1464,22 +1069,10 @@ model = Prophet(
 
 | Task | Duration |
 |------|----------|
-| Feature Store Setup | 1-2 hours |
-| First Model Training Pipeline | 2-3 hours |
+| Feature Tables Setup | 2-3 hours |
+| First Model (with FE) | 3-4 hours |
 | Additional Models (each) | 1-2 hours |
-| Batch Inference Pipeline | 1-2 hours |
+| Batch Inference Pipeline | 2-3 hours |
 | Asset Bundle Configuration | 1 hour |
-| **Total (3-5 models)** | **6-12 hours** |
-
----
-
-## Next Steps
-
-After ML Models:
-1. **Real-time Serving**: Create model serving endpoints
-2. **Model Monitoring**: Set up inference tables and drift detection
-3. **A/B Testing**: Configure traffic splitting between model versions
-4. **Dashboards**: Integrate predictions into AI/BI dashboards
-5. **Alerting**: Set up alerts for model performance degradation
-
+| **Total (5 models)** | **10-16 hours** |
 
