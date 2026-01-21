@@ -61,15 +61,15 @@ variables:
     default: <default_catalog>
   
   bronze_schema:
-    description: Schema name for Bronze layer
+    description: Schema name for Bronze layer (raw data ingestion)
     default: <bronze_schema_name>
   
   silver_schema:
-    description: Schema name for Silver layer
+    description: Schema name for Silver layer (cleaned, validated)
     default: <silver_schema_name>
   
   gold_schema:
-    description: Schema name for Gold layer
+    description: Schema name for Gold layer (business-ready aggregates)
     default: <gold_schema_name>
   
   warehouse_id:
@@ -82,15 +82,27 @@ targets:
     default: true
     variables:
       catalog: <dev_catalog>
+      # Override schema names with dev prefixes if needed
+      bronze_schema: dev_<username>_<bronze_schema_name>
+      silver_schema: dev_<username>_<silver_schema_name>
+      gold_schema: dev_<username>_<gold_schema_name>
       
   prod:
     mode: production
     variables:
       catalog: <prod_catalog>
+      # Production uses standard schema names (no prefix)
 
 # Include all resource definitions from resources/ folder
 include:
   - resources/*.yml
+  - resources/bronze/*.yml
+  - resources/silver/*.yml
+  - resources/gold/*.yml
+
+# Note: Schemas are NOT defined as resources
+# They are created programmatically in setup scripts using:
+# spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
 ```
 
 ## Serverless Job Pattern - ALL JOBS MUST USE SERVERLESS BY DEFAULT
@@ -929,46 +941,35 @@ databricks bundle run -t dev monitoring_layer_setup_job
 databricks bundle run -t dev master_setup_orchestrator
 ```
 
-## Schema Management Pattern
+## Schema Management
 
-```yaml
-# Unity Catalog Schema Definitions
-# Reference: https://docs.databricks.com/aws/en/dev-tools/bundles/resources
+**⚠️ CRITICAL: Schemas are NOT defined as Bundle resources.**
 
-resources:
-  schemas:
-    bronze_schema:
-      name: ${var.bronze_schema}
-      catalog_name: ${var.catalog}
-      comment: "Bronze layer - raw ingestion from source systems with minimal transformation"
-      properties:
-        layer: bronze
-        managed_by: databricks_asset_bundles
-        delta.autoOptimize.optimizeWrite: "true"
-        delta.autoOptimize.autoCompact: "true"
-        databricks.pipelines.predictiveOptimizations.enabled: "true"
-    
-    silver_schema:
-      name: ${var.silver_schema}
-      catalog_name: ${var.catalog}
-      comment: "Silver layer - cleaned, validated, and deduplicated data with data quality enforcement"
-      properties:
-        layer: silver
-        managed_by: databricks_asset_bundles
-        delta.autoOptimize.optimizeWrite: "true"
-        delta.autoOptimize.autoCompact: "true"
-        databricks.pipelines.predictiveOptimizations.enabled: "true"
-    
-    gold_schema:
-      name: ${var.gold_schema}
-      catalog_name: ${var.catalog}
-      comment: "Gold layer - business-level aggregates and analytics-ready datasets"
-      properties:
-        layer: gold
-        managed_by: databricks_asset_bundles
-        delta.autoOptimize.optimizeWrite: "true"
-        delta.autoOptimize.autoCompact: "true"
+Schemas are created **programmatically** in setup scripts using `CREATE SCHEMA IF NOT EXISTS` statements.
+
+### Pattern
+```python
+# In Bronze/Gold/ML setup scripts
+def create_catalog_and_schema(spark: SparkSession, catalog: str, schema: str):
+    """Ensures the Unity Catalog schema exists."""
+    print(f"Ensuring catalog '{catalog}' and schema '{schema}' exist...")
+    spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
+    print(f"✓ Schema {catalog}.{schema} ready")
 ```
+
+### Why Programmatic?
+- ✅ **Flexibility** - Logic can adapt based on environment
+- ✅ **Idempotent** - Safe to run multiple times
+- ✅ **Fast iteration** - No bundle redeployment needed
+- ✅ **Error handling** - Can catch and handle failures
+- ✅ **Dynamic** - Can create schemas based on runtime conditions
+
+### What databricks.yml Contains
+- ✅ Schema **variables** (names used across jobs)
+- ❌ NOT schema **resources** (no `resources.schemas:` section)
+
+See `common/03-schema-management-patterns.mdc` for complete details.
 
 ## Standard Tags Pattern
 
@@ -1896,8 +1897,6 @@ chmod +x scripts/validate_bundle.sh
 project_root/
 ├── databricks.yml          # Main bundle config
 ├── resources/
-│   ├── schemas.yml         # Schema definitions
-│   │
 │   # Orchestrators (recommended for production)
 │   ├── setup_orchestrator_job.yml     # One-time setup workflow
 │   ├── refresh_orchestrator_job.yml   # Recurring data pipeline
@@ -1942,10 +1941,11 @@ project_root/
 # Validate bundle configuration
 databricks bundle validate
 
-# Deploy all resources (schemas, jobs, pipelines)
+# Deploy all resources (jobs, pipelines - NOT schemas)
 databricks bundle deploy -t dev
 
-# Run setup orchestrator (creates tables, functions, monitoring)
+# Run setup orchestrator (creates SCHEMAS, tables, functions, monitoring)
+# This is where schemas are created programmatically using CREATE SCHEMA IF NOT EXISTS
 databricks bundle run -t dev setup_orchestrator_job
 
 # Run refresh orchestrator (populates data)

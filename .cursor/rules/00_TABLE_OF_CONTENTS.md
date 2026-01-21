@@ -60,16 +60,15 @@ Review **PART I** for principles, then use **PART V** to design and orchestrate 
 ---
 
 #### **Chapter 3: Unity Catalog Schemas** → `common/03-schema-management-patterns.mdc`
-**What you'll learn**: Config-driven schema management with governance
-- resources/schemas.yml patterns
-- Development mode prefix behavior
-- Schema variable overrides
-- Schema properties and metadata
-- CREATE OR REPLACE patterns
+**What you'll learn**: Programmatic schema management patterns
+- CREATE SCHEMA IF NOT EXISTS patterns
+- Schema variable usage
+- Idempotent schema creation
+- ⚠️ **DEPRECATED**: resources/schemas.yml pattern (no longer used)
 
 **When to read**: Before creating any tables
-**Lines**: 200+ | **Complexity**: Foundation
-**Key Concepts**: Dev prefixes, config-driven, idempotent operations
+**Lines**: 150+ | **Complexity**: Foundation
+**Key Concepts**: Programmatic creation, schema variables, idempotent operations
 
 ---
 

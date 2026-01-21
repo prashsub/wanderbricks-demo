@@ -32,8 +32,19 @@ def get_parameters():
 
 def create_catalog_and_schema(spark: SparkSession, catalog: str, feature_schema: str):
     """Ensures the Unity Catalog schema exists for feature tables and models."""
-    print(f"Ensuring catalog '{catalog}' and schema '{feature_schema}' exist...")
-    spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
+    # Check if catalog exists
+    print(f"\nChecking if catalog '{catalog}' exists...")
+    try:
+        spark.sql(f"DESCRIBE CATALOG {catalog}")
+        print(f"✓ Catalog '{catalog}' exists")
+    except Exception as e:
+        print(f"❌ ERROR: Catalog '{catalog}' does not exist!")
+        print(f"Please create the catalog first using:")
+        print(f"  CREATE CATALOG {catalog};")
+        raise RuntimeError(f"Catalog '{catalog}' does not exist. Cannot proceed with feature store setup.") from e
+    
+    # Ensure schema exists
+    print(f"Ensuring schema '{feature_schema}' exists...")
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{feature_schema}")
     spark.sql(f"COMMENT ON SCHEMA {catalog}.{feature_schema} IS 'ML feature tables and registered models'")
     

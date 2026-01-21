@@ -45,7 +45,27 @@ targets:
       silver_tables_schema: dev_prashanth_subrahmanyam_wanderbricks_silver
       gold_schema: dev_prashanth_subrahmanyam_wanderbricks_gold
       ml_schema: dev_prashanth_subrahmanyam_wanderbricks_ml
+    # Enable development mode for DLT pipeline in dev target
+    resources:
+      pipelines:
+        silver_dlt_pipeline:
+          development: true
       
+  uat:
+    workspace:
+      host: https://adb-7405608227237250.10.azuredatabricks.net/
+      profile: uat
+      root_path: /Workspace/Users/prashanth.subrahmanyam@databricks.com/.bundle/${bundle.name}/${bundle.target}
+    mode: development
+    variables:
+      catalog: rct_vibe_coding
+      bronze_schema: prashanth_subrahmanyam_booking_bronze
+      silver_schema: prashanth_subrahmanyam_booking_silver
+      silver_tables_schema: prashanth_subrahmanyam_booking_silver
+      gold_schema: prashanth_subrahmanyam_booking_gold
+      ml_schema: prashanth_subrahmanyam_booking_ml
+      warehouse_id: ""
+
   prod:
     mode: production
     variables:
@@ -72,4 +92,3 @@ include:
   - resources/silver/*.yml
   - resources/gold/*.yml
   - resources/ml/*.yml
-

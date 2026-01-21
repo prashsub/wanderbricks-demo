@@ -1,116 +1,22 @@
 ---
-description: Schema management patterns for Databricks Asset Bundles with Unity Catalog, including development mode prefix handling and config-driven approach
-globs: ["resources/*.yml", "databricks.yml", "src/**/*.py"]
+description: Schema management patterns for Databricks Asset Bundles with Unity Catalog - DEPRECATED (schemas created programmatically in setup scripts)
+globs: ["databricks.yml", "src/**/*.py"]
 alwaysApply: true
 ---
 
 # Schema Management Patterns for Databricks Asset Bundles
 
-## Core Principle: Config-Driven Schema Management
+## ⚠️ DEPRECATED PATTERN
 
-**ALWAYS use `resources/schemas.yml` to define schemas as Databricks resources.**
+**The `resources/schemas.yml` pattern is NO LONGER USED in this project.**
 
-### Why Config-Driven?
-- ✅ Centralized schema definitions
-- ✅ Consistent metadata and properties
-- ✅ Version-controlled governance settings
-- ✅ Declarative infrastructure-as-code
-- ✅ Automatic lifecycle management
+Schemas are now created programmatically in setup scripts using `CREATE SCHEMA IF NOT EXISTS` statements. This provides more flexibility and control over schema creation and properties.
 
-## Development Mode Prefix Behavior
+## Current Pattern: Programmatic Schema Creation
 
-### Understanding the Prefix
-In Databricks Asset Bundles, **development mode automatically adds a prefix** to resource names:
+### Setup Scripts Pattern
 
-```
-Pattern: dev_{username}_{original_name}
-Example: company_silver → dev_user_company_silver
-```
-
-### Critical Rule: Schema Variable Overrides
-
-**In `databricks.yml`, ALWAYS override schema variables in the dev target to match the prefixed schema names:**
-
-```yaml
-variables:
-  bronze_schema:
-    description: Schema name for Bronze layer
-    default: company_bronze
-  silver_schema:
-    description: Schema name for Silver layer
-    default: company_silver
-  gold_schema:
-    description: Schema name for Gold layer
-    default: company_gold
-
-targets:
-  dev:
-    mode: development
-    default: true
-    variables:
-      catalog: prashanth_subrahmanyam_catalog
-      # Override schema names to match dev mode prefixes
-      bronze_schema: dev_user_company_bronze
-      silver_schema: dev_user_company_silver
-      gold_schema: dev_user_company_gold
-      
-  prod:
-    mode: production
-    variables:
-      catalog: prashanth_subrahmanyam_catalog
-      # Production uses standard names (no prefix)
-```
-
-### Why This Matters
-
-1. **Schema Resources** (from `resources/schemas.yml`):
-   - Dev mode: Creates `dev_{username}_company_silver`
-   - Prod mode: Creates `company_silver`
-
-2. **DLT Pipelines** (Silver layer):
-   - Configured with `schema: ${var.silver_schema}`
-   - DLT automatically adds prefix in dev mode
-   - Must match the schema resource name
-
-3. **Python Jobs** (Bronze, Gold):
-   - Use `${var.bronze_schema}`, `${var.gold_schema}` parameters
-   - Create tables directly via SQL
-   - Must reference the actual prefixed schema names
-
-## Resources Schema Pattern
-
-**File: `resources/schemas.yml`**
-
-```yaml
-resources:
-  schemas:
-    bronze_schema:
-      name: ${var.bronze_schema}
-      catalog_name: ${var.catalog}
-      comment: "Bronze layer - raw ingestion..."
-      properties:
-        delta.autoOptimize.optimizeWrite: "true"
-        delta.autoOptimize.autoCompact: "true"
-        databricks.pipelines.predictiveOptimizations.enabled: "true"
-        layer: "bronze"
-        # ... governance metadata
-    
-    silver_schema:
-      name: ${var.silver_schema}
-      catalog_name: ${var.catalog}
-      # ... similar structure
-    
-    gold_schema:
-      name: ${var.gold_schema}
-      catalog_name: ${var.catalog}
-      # ... similar structure
-```
-
-## Schema Creation in Python Scripts
-
-### Bronze and Gold Setup Scripts
-
-**ALWAYS use CREATE OR REPLACE TABLE for idempotent schema management:**
+**Create schemas programmatically in setup scripts:**
 
 ```python
 # At the start of setup script
@@ -132,11 +38,12 @@ spark.sql(f"""
 """)
 ```
 
-### Why CREATE OR REPLACE?
-- ✅ Allows schema evolution without manual drops
+### Benefits
+- ✅ Allows schema evolution without manual configuration
 - ✅ Idempotent deployments
 - ✅ Faster iteration during development
-- ✅ Prevents "table already exists" errors
+- ✅ Prevents "schema/table already exists" errors
+- ✅ More flexibility than declarative YAML approach
 
 ## DLT Pipeline Schema Configuration
 
@@ -188,28 +95,11 @@ spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.company_bronze")
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{bronze_schema}")
 ```
 
-## Schema Property Standards
+## Schema Configuration
 
-**ALWAYS include these properties in `resources/schemas.yml`:**
+**Schema properties and metadata are now managed at the table level via TBLPROPERTIES.**
 
-```yaml
-properties:
-  # Performance
-  delta.autoOptimize.optimizeWrite: "true"
-  delta.autoOptimize.autoCompact: "true"
-  databricks.pipelines.predictiveOptimizations.enabled: "true"
-  
-  # Governance
-  layer: "<bronze|silver|gold>"
-  source_system: "<source_name>"
-  data_classification: "<confidential|internal|public>"
-  business_owner: "<Team Name>"
-  technical_owner: "Data Engineering"
-  
-  # Lifecycle
-  retention_period: "<duration>"
-  backup_enabled: "true"
-```
+See `common/04-databricks-table-properties.mdc` for table-level property standards.
 
 ## Enabling Predictive Optimization at Schema Level
 
@@ -270,10 +160,9 @@ def enable_predictive_optimization(spark: SparkSession, catalog: str):
 
 ## Validation Checklist
 
-When setting up schemas:
-- [ ] `resources/schemas.yml` defines all schemas
-- [ ] Each schema has comprehensive properties
-- [ ] `databricks.yml` has dev target overrides with prefixes
+When setting up schemas programmatically:
+- [ ] Setup scripts use `CREATE SCHEMA IF NOT EXISTS`
+- [ ] `databricks.yml` defines schema variables
 - [ ] All Python scripts use schema variables (not hardcoded)
 - [ ] DLT pipelines use `catalog:` and `schema:` fields
 - [ ] Bronze/Gold scripts use `CREATE OR REPLACE TABLE`
@@ -281,16 +170,12 @@ When setting up schemas:
 
 ## Troubleshooting
 
-### Issue: "Schema does not exist" in dev
-**Solution:** Check that dev target overrides match the actual prefixed schema names.
+### Issue: "Schema does not exist"
+**Solution:** Ensure setup scripts run first to create schemas before table creation jobs.
 
-### Issue: Double-prefixed schemas (dev_user_dev_user_schema)
-**Solution:** DLT adds prefix automatically. Don't include the prefix in the DLT `schema:` field.
-
-### Issue: Schema mismatch between Bronze and Silver
+### Issue: Schema mismatch between layers
 **Solution:** All jobs must use the same schema variable values from `databricks.yml`.
 
 ## References
 - [Databricks Asset Bundles](https://docs.databricks.com/dev-tools/bundles/)
 - [Unity Catalog Schemas](https://docs.databricks.com/data-governance/unity-catalog/create-schemas.html)
-- [Schema Resources](https://docs.databricks.com/dev-tools/bundles/resources.html#schema)

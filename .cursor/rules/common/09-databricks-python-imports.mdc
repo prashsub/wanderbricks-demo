@@ -12,6 +12,60 @@ alwaysApply: false
 
 **Reference:** [Share code between Databricks notebooks](https://docs.databricks.com/aws/en/notebooks/share-code)
 
+## ⚠️ CRITICAL: Asset Bundle Path Setup
+
+**When deploying notebooks via Databricks Asset Bundles**, you MUST add a `sys.path` setup block to enable imports from other folders. Without this, you'll get `ModuleNotFoundError: No module named 'src'`.
+
+### Required Path Setup Pattern
+
+Add this block immediately after `# Databricks notebook source`:
+
+```python
+# Databricks notebook source
+# ===========================================================================
+# PATH SETUP FOR ASSET BUNDLE IMPORTS
+# ===========================================================================
+# This enables imports from src.ml.config and src.ml.utils when deployed
+# via Databricks Asset Bundles. The bundle root is computed dynamically.
+# Reference: https://docs.databricks.com/aws/en/notebooks/share-code
+import sys
+import os
+
+try:
+    # Get current notebook path and compute bundle root
+    _notebook_path = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+    _bundle_root = "/Workspace" + str(_notebook_path).rsplit('/src/', 1)[0]
+    if _bundle_root not in sys.path:
+        sys.path.insert(0, _bundle_root)
+        print(f"✓ Added bundle root to sys.path: {_bundle_root}")
+except Exception as e:
+    print(f"⚠ Path setup skipped (local execution): {e}")
+# ===========================================================================
+"""
+Your notebook docstring here...
+"""
+
+# COMMAND ----------
+
+# Now imports work!
+from src.ml.config.feature_registry import FeatureRegistry
+from src.ml.utils.training_base import setup_training_environment
+```
+
+### Why This Is Needed
+
+1. **Asset Bundles deploy to `/Workspace/.bundle/<target>/files/`**
+2. **The Python path doesn't include the bundle root by default**
+3. **This setup dynamically computes the bundle root from the notebook path**
+
+### Script to Add Path Setup
+
+Use `scripts/add_path_setup_to_notebooks.py` to batch-add this setup to all notebooks:
+
+```bash
+python3 scripts/add_path_setup_to_notebooks.py
+```
+
 ## File Type Identification
 
 ### Pure Python File (✅ Importable)

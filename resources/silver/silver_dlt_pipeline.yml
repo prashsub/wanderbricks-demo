@@ -54,8 +54,9 @@ resources:
       # Continuous vs Triggered
       continuous: false
       
-      # Development Mode (faster iteration, auto-recovery)
-      development: true
+      # Development Mode - controlled by target mode
+      # Set to true for dev target via target overrides in databricks.yml
+      # production mode targets (uat, prod) will use false (default)
       
       # Edition (ADVANCED for expectations, SCD, etc.)
       edition: ADVANCED

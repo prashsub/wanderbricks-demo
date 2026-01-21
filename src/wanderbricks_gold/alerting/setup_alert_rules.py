@@ -1243,9 +1243,19 @@ def main():
     print("=" * 80)
     
     try:
+        # Check if catalog exists
+        print(f"\nChecking if catalog '{catalog}' exists...")
+        try:
+            spark.sql(f"DESCRIBE CATALOG {catalog}")
+            print(f"✓ Catalog '{catalog}' exists")
+        except Exception as e:
+            print(f"❌ ERROR: Catalog '{catalog}' does not exist!")
+            print(f"Please create the catalog first using:")
+            print(f"  CREATE CATALOG {catalog};")
+            raise RuntimeError(f"Catalog '{catalog}' does not exist. Cannot proceed with alert rules setup.") from e
+        
         # Ensure schema exists
-        print(f"\nEnsuring catalog '{catalog}' and schema '{gold_schema}' exist...")
-        spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
+        print(f"\nEnsuring schema '{gold_schema}' exists...")
         spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{gold_schema}")
         print(f"✓ Schema {catalog}.{gold_schema} ready")
         
@@ -1276,6 +1286,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
