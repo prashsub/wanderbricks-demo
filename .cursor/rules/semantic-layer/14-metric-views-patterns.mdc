@@ -1,7 +1,10 @@
 ---
 description: Standard patterns for creating Databricks Metric Views with semantic metadata for Genie and AI/BI
-globs: src/company_gold/**/*.yaml
-alwaysApply: true
+globs: 
+  - src/**/semantic/**/*.yaml
+  - src/**/*metric*view*.py
+  - src/**/*metric*view*.yaml
+alwaysApply: false
 ---
 
 # Metric Views Patterns for Genie & AI/BI

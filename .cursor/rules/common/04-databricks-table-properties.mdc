@@ -1,7 +1,11 @@
 ---
 description: Standard table properties and metadata patterns for Unity Catalog tables across Bronze, Silver, and Gold layers
-globs: src/**/*.py
-alwaysApply: true
+globs: 
+  - "src/**/*setup*.py"
+  - "src/**/*create*.py"
+  - "src/**/*table*.py"
+  - "src/**/*.sql"
+alwaysApply: false
 ---
 
 # Databricks Table Properties Standards

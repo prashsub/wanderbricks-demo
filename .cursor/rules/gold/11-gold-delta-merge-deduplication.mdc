@@ -1,5 +1,9 @@
 ---
 description: Delta MERGE deduplication pattern for Gold layer to prevent duplicate source key errors
+globs:
+  - "src/**/*gold*/merge*.py"
+  - "src/**/*gold*/*merge*.py"
+alwaysApply: false
 ---
 # Gold Layer Delta MERGE Deduplication Pattern
 

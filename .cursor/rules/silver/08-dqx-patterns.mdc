@@ -1,5 +1,11 @@
 ---
 description: Databricks DQX framework patterns for advanced data quality validation with detailed failure insights and flexible quarantine strategies
+globs:
+  - "src/**/*silver*/**/*.py"
+  - "src/**/*gold*/merge*.py"
+  - "src/**/*quality*.py"
+  - "src/**/*dqx*.py"
+alwaysApply: false
 ---
 # DQX Data Quality Framework Patterns
 

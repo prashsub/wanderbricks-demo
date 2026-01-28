@@ -1,3 +1,12 @@
+---
+description: Delta Live Tables expectations patterns for data quality with Unity Catalog Delta table storage
+globs:
+  - "src/**/*silver*/**/*.py"
+  - "src/**/*dlt*.py"
+  - "src/**/expectations*.py"
+alwaysApply: false
+---
+
 # Delta Live Tables Expectations Patterns
 
 ## Pattern Recognition

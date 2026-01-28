@@ -1,296 +1,226 @@
-# Cursor Rules - Databricks Medallion Architecture Framework
+# Cursor Rules: Tiered Context Loading System
 
-## 📂 Organized by Layer
+This folder contains 30 cursor rules organized with a **tiered loading architecture** to stay within Claude Opus's 200K token context limit.
 
-Cursor rules are now organized into logical folders for easier navigation:
+---
+
+## Quick Summary
+
+| Category | Rules | Tokens | Loading |
+|---|---|---|---|
+| **Tier 1: Core** | 4 rules | ~11K | Always loaded |
+| **Tier 2: Indexes** | 9 domains | ~2K each | On domain detection |
+| **Tier 3: Detailed** | 26 rules | ~206K total | On specific task |
+
+**Total Rule Inventory:** ~217K tokens (if ALL loaded - but we never load all!)
+
+---
+
+## Tier 1: Always Loaded (~11K tokens)
+
+These rules load for EVERY interaction:
 
 ```
 .cursor/rules/
-├── 00_TABLE_OF_CONTENTS.md          # Complete guide with learning paths
-├── README.md                         # This file
-├── common/                           # Foundation & infrastructure (9 rules)
-│   ├── 01-databricks-expert-agent.mdc
-│   ├── 02-databricks-asset-bundles.mdc
-│   ├── 03-schema-management-patterns.mdc
-│   ├── 04-databricks-table-properties.mdc
-│   ├── 05-unity-catalog-constraints.mdc
-│   ├── 09-databricks-python-imports.mdc
-│   ├── 20-cursor-rules.mdc
-│   ├── 21-self-improvement.mdc
-│   └── 22-documentation-organization.mdc
-├── bronze/                           # Bronze layer patterns (1 rule)
-│   └── 06-faker-data-generation.mdc
-├── silver/                           # Silver layer patterns (2 rules)
-│   ├── 07-dlt-expectations-patterns.mdc
-│   └── 08-dqx-patterns.mdc
-├── gold/                             # Gold layer patterns (7 rules)
-│   ├── 10-gold-layer-merge-patterns.mdc
-│   ├── 11-gold-delta-merge-deduplication.mdc
-│   ├── 12-gold-layer-documentation.mdc
-│   ├── 13-mermaid-erd-patterns.mdc
-│   ├── 23-gold-layer-schema-validation.mdc
-│   ├── 24-fact-table-grain-validation.mdc
-│   └── 25-yaml-driven-gold-setup.mdc
-├── semantic-layer/                   # Semantic layer patterns (3 rules)
-│   ├── 14-metric-views-patterns.mdc
-│   ├── 15-databricks-table-valued-functions.mdc
-│   └── 16-genie-space-patterns.mdc
-├── monitoring/                       # Observability & BI (2 rules)
-│   ├── 17-lakehouse-monitoring-comprehensive.mdc
-│   └── 18-databricks-aibi-dashboards.mdc
-├── exploration/                      # Ad-hoc analysis (1 rule)
-│   └── 22-adhoc-exploration-notebooks.mdc
-└── planning/                         # Project planning (1 rule)
-    └── 26-project-plan-methodology.mdc
+├── 00-rule-navigator.mdc          # Navigation system (~3K)
+├── common/
+│   └── 01-databricks-expert-agent.mdc  # Core agent (~5.7K)
+└── admin/
+    ├── 20-cursor-rules.mdc        # Rules management (~0.4K)
+    └── 22-documentation-organization.mdc  # Docs standards (~2K)
 ```
 
 ---
 
-## 🚀 Quick Start
+## Tier 2 & 3: Domain-Specific Rules
 
-### Step 1: Read the Guide
-📖 **[00_TABLE_OF_CONTENTS.md](./00_TABLE_OF_CONTENTS.md)** - Complete framework guide with:
-- Sequential learning paths (Rapid Prototyping, Production, Data Quality Focus, Semantic Layer)
-- Complexity levels (Foundation, Intermediate, Advanced)
-- Cross-references between related rules
-- Certification checklists
-
-### Step 2: Choose Your Path
-
-**Rapid Prototyping (8 hours):**
+### Semantic Layer (~44.5K tokens total)
 ```
-common/ (foundations) → bronze/ → silver/ → gold/
+.cursor/rules/semantic-layer/
+├── 14-metric-views-patterns.mdc         # ~11K tokens
+├── 15-databricks-table-valued-functions.mdc  # ~8K tokens
+├── 16-genie-space-patterns.mdc          # ~10.5K tokens
+└── 29-genie-space-export-import-api.mdc # ~14.5K tokens
+```
+**Triggers:** "metric view", "TVF", "Genie", "semantic layer"
+
+---
+
+### Gold Layer (~35.8K tokens total)
+```
+.cursor/rules/gold/
+├── 10-gold-layer-merge-patterns.mdc     # ~2.5K tokens
+├── 11-gold-delta-merge-deduplication.mdc  # ~4K tokens
+├── 12-gold-layer-documentation.mdc      # ~10K tokens
+├── 13-mermaid-erd-patterns.mdc          # ~6K tokens
+├── 23-gold-layer-schema-validation.mdc  # ~4K tokens
+├── 24-fact-table-grain-validation.mdc   # ~5K tokens
+└── 25-yaml-driven-gold-setup.mdc        # ~3.5K tokens
+```
+**Triggers:** "Gold layer", "merge", "fact table", "dimension", "SCD2"
+
+---
+
+### Infrastructure (~35.6K tokens total)
+```
+.cursor/rules/common/
+├── 02-databricks-asset-bundles.mdc      # ~15K tokens ⚠️ LARGE
+├── 03-schema-management-patterns.mdc    # ~1.5K tokens
+├── 04-databricks-table-properties.mdc   # ~2K tokens
+├── 05-unity-catalog-constraints.mdc     # ~7.5K tokens
+└── 09-databricks-python-imports.mdc     # ~3K tokens
+```
+**Triggers:** "deploy", "Asset Bundle", "job", "schema", "constraints"
+
+---
+
+### Monitoring (~34.2K tokens total)
+```
+.cursor/rules/monitoring/
+├── 17-lakehouse-monitoring-comprehensive.mdc  # ~14.5K tokens ⚠️ LARGE
+├── 18-databricks-aibi-dashboards.mdc    # ~12K tokens ⚠️ LARGE
+└── 19-sql-alerting-patterns.mdc         # ~7.5K tokens
+```
+**Triggers:** "monitoring", "dashboard", "alert", "AI/BI"
+
+---
+
+### Silver Layer (~23.9K tokens total)
+```
+.cursor/rules/silver/
+├── 07-dlt-expectations-patterns.mdc     # ~11K tokens ⚠️ LARGE
+└── 08-dqx-patterns.mdc                  # ~13K tokens ⚠️ LARGE
+```
+**Triggers:** "DLT", "Silver layer", "expectations", "DQX"
+
+---
+
+### Bronze Layer (~4.5K tokens total)
+```
+.cursor/rules/bronze/
+└── 06-faker-data-generation.mdc         # ~4.5K tokens
+```
+**Triggers:** "Bronze", "Faker", "synthetic data"
+
+---
+
+### Machine Learning (~16K tokens total)
+```
+.cursor/rules/ml/
+└── 27-mlflow-mlmodels-patterns.mdc      # ~16K tokens ⚠️ LARGE
+```
+**Triggers:** "MLflow", "model training", "ML pipeline"
+
+---
+
+### Exploration (~5K tokens total)
+```
+.cursor/rules/exploration/
+└── 22-adhoc-exploration-notebooks.mdc   # ~5K tokens
+```
+**Triggers:** "exploration notebook", "Databricks Connect", "ad-hoc"
+
+---
+
+### Planning (~8.5K tokens total)
+```
+.cursor/rules/planning/
+└── 26-project-plan-methodology.mdc      # ~8.5K tokens
+```
+**Triggers:** "project plan", "roadmap", "phase planning"
+
+---
+
+### Admin (~6.6K additional tokens)
+```
+.cursor/rules/admin/
+└── 21-self-improvement.mdc              # ~6.6K tokens
+```
+**Triggers:** "improve rules", `.cursor/rules/**/*.mdc` files
+
+---
+
+## How Tiered Loading Works
+
+### Step 1: Core Always Active (~11K)
+```
+Every interaction starts with Tier 1 rules loaded.
 ```
 
-**Production Implementation (4 weeks):**
+### Step 2: Domain Detection (~13-15K total)
 ```
-Week 1: common/ → bronze/ → silver/
-Week 2: gold/
-Week 3: semantic-layer/
-Week 4: monitoring/ → exploration/
+Navigator detects keywords → Loads domain INDEX (summary, not full rules)
+Example: "metric view" → Loads Semantic Layer Index (~2K)
 ```
 
-**Data Quality Focus (2 weeks):**
+### Step 3: Task-Specific Loading (~25-40K total)
 ```
-common/ → bronze/ (with DQ) → silver/ (DLT + DQX) → monitoring/
+Specific task identified → Loads ONE detailed rule
+Example: "create metric view" → Loads 14-metric-views-patterns.mdc (~11K)
 ```
 
-### Step 3: Apply Rules Sequentially
-Each folder contains rules that build on previous folders. Follow the numbering within each folder.
+### Step 4: Deep Dive (if needed, ~60K max)
+```
+Complex task → May load 2-3 related rules
+Monitor total context - stays under 80K for rules
+```
 
 ---
 
-## 📊 Statistics
+## ⚠️ Large Rules (10K+ tokens)
 
-| Category | Rules | Lines | Focus |
-|----------|-------|-------|-------|
-| **common/** | 9 | ~3,000 | Foundation & infrastructure |
-| **bronze/** | 1 | ~350 | Raw data ingestion |
-| **silver/** | 2 | ~1,200 | Data quality & validation |
-| **gold/** | 7 | ~2,800 | Analytics-ready models |
-| **semantic-layer/** | 3 | ~1,800 | Natural language & BI |
-| **monitoring/** | 2 | ~1,450 | Observability & dashboards |
-| **exploration/** | 1 | ~800 | Ad-hoc analysis |
-| **planning/** | 1 | ~900 | Project methodology |
-| **Total** | **26 rules** | **~12,300** | Complete framework |
+Load only ONE of these at a time:
 
----
-
-## 🎯 Rule Categories Explained
-
-### common/ - Foundations (Read First!)
-Core principles and patterns that apply across all layers:
-- Architecture & governance principles
-- Asset Bundles (IaC for Databricks)
-- Unity Catalog schema management
-- Table properties standards
-- PK/FK constraints
-- Python code sharing
-- Meta rules (cursor rules, self-improvement, documentation)
-
-**When to read**: Before starting any implementation
+| Rule | Tokens | Domain |
+|---|---|---|
+| `27-mlflow-mlmodels-patterns` | ~16K | ML |
+| `02-databricks-asset-bundles` | ~15K | Infrastructure |
+| `17-lakehouse-monitoring-comprehensive` | ~14.5K | Monitoring |
+| `29-genie-space-export-import-api` | ~14.5K | Semantic |
+| `08-dqx-patterns` | ~13K | Silver |
+| `18-databricks-aibi-dashboards` | ~12K | Monitoring |
+| `14-metric-views-patterns` | ~11K | Semantic |
+| `07-dlt-expectations-patterns` | ~11K | Silver |
+| `16-genie-space-patterns` | ~10.5K | Semantic |
+| `12-gold-layer-documentation` | ~10K | Gold |
 
 ---
 
-### bronze/ - Raw Data Ingestion
-Patterns for landing raw data with minimal transformation:
-- Faker data generation (for testing/demos)
-- Unity Catalog compliance
-- Change Data Feed enablement
+## Key Files
 
-**When to read**: When creating Bronze layer
-
----
-
-### silver/ - Data Quality Layer
-Validated, cleansed data with comprehensive quality checks:
-- DLT expectations with Delta table-based rules
-- DQX integration for advanced diagnostics
-- Quarantine patterns
-- Never-fail pipelines
-
-**When to read**: After Bronze layer is complete
+| File | Purpose |
+|---|---|
+| `00-rule-navigator.mdc` | Main navigation system with indexes |
+| `CONTEXT_BUDGET.md` | Detailed token budget analysis |
+| `README.md` | This overview |
 
 ---
 
-### gold/ - Analytics-Ready Layer
-Business-focused dimensional models:
-- ERD design with Mermaid
-- YAML-driven table creation (single source of truth)
-- Schema and grain validation
-- MERGE patterns (SCD Type 1 & 2)
-- Deduplication strategies
-- Comprehensive documentation
+## Explicit Rule Loading
 
-**When to read**: After Silver layer is deployed
+To explicitly load a specific rule:
+```
+@14-metric-views-patterns.mdc help me create a metric view
+```
 
 ---
 
-### semantic-layer/ - Business Intelligence
-Natural language queries and business metrics:
-- Metric Views (semantic layer for Genie)
-- Table-Valued Functions (pre-built queries)
-- Genie Space setup (natural language interface)
+## Adding New Rules
 
-**When to read**: After Gold layer is complete
-
----
-
-### monitoring/ - Observability
-Automated monitoring and visualization:
-- Lakehouse Monitoring (custom metrics, drift detection)
-- AI/BI Lakeview Dashboards
-
-**When to read**: After Gold layer is deployed
+1. Calculate size: `wc -c new-rule.mdc / 4` = tokens
+2. Place in appropriate domain folder
+3. Set `alwaysApply: false` in frontmatter
+4. Add globs for file pattern triggers
+5. Update navigator's domain index
+6. Update `CONTEXT_BUDGET.md`
+7. If >10K tokens, add to "Large Rules" list
 
 ---
 
-### exploration/ - Development Tools
-Ad-hoc analysis and exploration:
-- Dual-format notebooks (Databricks + Jupyter)
-- Standard helper functions
+## Benefits
 
-**When to read**: When creating exploration utilities
-
----
-
-### planning/ - Project Methodology
-Multi-phase project design:
-- 5-phase structure (Bronze → Frontend)
-- Agent Domain Framework
-- Artifact organization
-
-**When to read**: When planning comprehensive data platform solutions
-
----
-
-## 🔍 Finding the Right Rule
-
-### By Task
-- **Starting a new project?** → `common/01-databricks-expert-agent.mdc`
-- **Setting up deployment?** → `common/02-databricks-asset-bundles.mdc`
-- **Creating tables?** → `common/04-databricks-table-properties.mdc`
-- **Generating test data?** → `bronze/06-faker-data-generation.mdc`
-- **Adding data quality?** → `silver/07-dlt-expectations-patterns.mdc`
-- **Designing Gold schema?** → `gold/13-mermaid-erd-patterns.mdc`
-- **Creating Gold tables?** → `gold/25-yaml-driven-gold-setup.mdc`
-- **Merging to Gold?** → `gold/10-gold-layer-merge-patterns.mdc`
-- **Creating metrics?** → `semantic-layer/14-metric-views-patterns.mdc`
-- **Setting up Genie?** → `semantic-layer/16-genie-space-patterns.mdc`
-- **Adding monitoring?** → `monitoring/17-lakehouse-monitoring-comprehensive.mdc`
-- **Building dashboards?** → `monitoring/18-databricks-aibi-dashboards.mdc`
-
-### By Problem
-- **Duplicate keys in MERGE?** → `gold/11-gold-delta-merge-deduplication.mdc`
-- **Schema mismatches?** → `gold/23-gold-layer-schema-validation.mdc`
-- **Wrong fact grain?** → `gold/24-fact-table-grain-validation.mdc`
-- **Import issues?** → `common/09-databricks-python-imports.mdc`
-- **DQX API errors?** → `silver/08-dqx-patterns.mdc`
-- **Monitoring metrics not showing?** → `monitoring/17-lakehouse-monitoring-comprehensive.mdc`
-
----
-
-## 📖 Documentation Standards
-
-All rules follow consistent format:
-- **Pattern Recognition** - When to use this rule
-- **Benefits** - Why this pattern matters
-- **Implementation** - Step-by-step examples
-- **Validation Checklist** - Ensure correctness
-- **Common Mistakes** - What to avoid
-- **References** - Official documentation links
-
----
-
-## 🔄 Continuous Improvement
-
-Rules are continuously updated based on:
-- Official Databricks documentation changes
-- Real-world implementation learnings
-- Community feedback
-- New platform features
-
-See `common/21-self-improvement.mdc` for the improvement methodology.
-
----
-
-## 🎓 Certification
-
-Complete learning paths and earn certifications:
-- ✅ Bronze Layer Certified (Chapters 1-7)
-- ✅ Silver Layer Certified (Chapters 8-9)
-- ✅ Gold Layer Certified (Chapters 10-16)
-- ✅ Semantic Layer Certified (Chapters 17-19, 21)
-- ✅ Production Ready (All + Monitoring)
-
-See [00_TABLE_OF_CONTENTS.md](./00_TABLE_OF_CONTENTS.md) for full certification checklists.
-
----
-
-## 🚦 Using Rules with AI Assistants
-
-These rules are designed to work with AI coding assistants (Cursor, GitHub Copilot, etc.):
-
-1. **Reference specific rules** in your prompts:
-   ```
-   "Follow gold/25-yaml-driven-gold-setup.mdc to create tables from YAML"
-   ```
-
-2. **Use folder context**:
-   ```
-   "Apply common/ foundation patterns for Unity Catalog setup"
-   ```
-
-3. **Sequential implementation**:
-   ```
-   "Implement Bronze (bronze/), then Silver (silver/), then Gold (gold/)"
-   ```
-
----
-
-## 📚 External Resources
-
-- [Databricks Documentation](https://docs.databricks.com/)
-- [Unity Catalog](https://docs.databricks.com/unity-catalog/)
-- [Delta Lake](https://docs.databricks.com/delta/)
-- [DLT Expectations](https://docs.databricks.com/dlt/expectations)
-- [Metric Views](https://docs.databricks.com/metric-views/)
-
----
-
-## 📞 Support
-
-- **Issues**: Check `common/21-self-improvement.mdc` for rule improvement workflow
-- **Updates**: See recent improvements in `00_TABLE_OF_CONTENTS.md`
-- **Documentation**: All rules have inline documentation and examples
-
----
-
-**Version**: December 2025  
-**Total Rules**: 26  
-**Total Lines**: ~12,300  
-**Organization**: Layer-based folders (NEW!)
-
-**Remember**: These rules represent a complete, production-tested methodology for building Databricks data products. Follow sequentially, validate with checklists, and build iteratively.
-
-🚀 **Happy Building!**
+- ✅ **80% token reduction** vs loading all rules
+- ✅ **Stays under 200K limit** even with large rule inventory
+- ✅ **Scalable** - can add unlimited rules
+- ✅ **Fast responses** - less context to process
+- ✅ **Accurate** - focused, relevant patterns

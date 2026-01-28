@@ -1,5 +1,10 @@
 ---
 description: Patterns and best practices for creating Table-Valued Functions (TVFs) in Databricks optimized for Genie Space natural language queries
+globs:
+  - "src/**/semantic/**/*.sql"
+  - "src/**/*tvf*.sql"
+  - "src/**/*function*.sql"
+alwaysApply: false
 ---
 
 # Databricks Table-Valued Functions (TVFs) for Genie

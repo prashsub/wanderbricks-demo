@@ -1,5 +1,10 @@
 ---
 description: Unity Catalog Primary Key and Foreign Key constraint patterns for proper relational modeling in Databricks
+globs:
+  - "src/**/*constraint*.py"
+  - "src/**/*setup*.py"
+  - "src/**/*gold*/*.py"
+  - "gold_layer_design/**/*.yaml"
 alwaysApply: false
 ---
 # Unity Catalog Primary Key and Foreign Key Constraints

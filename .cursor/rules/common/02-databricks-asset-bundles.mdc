@@ -1,7 +1,9 @@
 ---
 description: Standard patterns for Databricks Asset Bundles configuration files for serverless jobs, DLT pipelines, and workflows
-globs: resources/**/*.yml
-alwaysApply: true
+globs: 
+  - resources/**/*.yml
+  - databricks.yml
+alwaysApply: false
 ---
 
 # Databricks Asset Bundles Configuration Patterns

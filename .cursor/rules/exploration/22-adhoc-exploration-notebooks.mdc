@@ -1,5 +1,11 @@
 ---
 description: Patterns for creating dual-format ad-hoc exploration notebooks that work in both Databricks workspace and locally via Databricks Connect
+globs:
+  - "src/**/*exploration*/**/*.py"
+  - "src/**/*exploration*/**/*.ipynb"
+  - "src/**/adhoc/**/*.py"
+  - "src/**/adhoc/**/*.ipynb"
+alwaysApply: false
 ---
 
 # Ad-Hoc Exploration Notebook Patterns

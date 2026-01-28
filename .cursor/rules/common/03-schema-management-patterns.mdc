@@ -1,7 +1,10 @@
 ---
 description: Schema management patterns for Databricks Asset Bundles with Unity Catalog - DEPRECATED (schemas created programmatically in setup scripts)
-globs: ["databricks.yml", "src/**/*.py"]
-alwaysApply: true
+globs: 
+  - "databricks.yml"
+  - "src/**/*setup*.py"
+  - "src/**/*schema*.py"
+alwaysApply: false
 ---
 
 # Schema Management Patterns for Databricks Asset Bundles

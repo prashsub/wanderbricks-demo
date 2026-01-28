@@ -1,7 +1,9 @@
 ---
 description: Gold layer merge patterns including column mapping, schema evolution, and common pitfalls to avoid
-globs: ["src/company_gold/*.py"]
-alwaysApply: true
+globs: 
+  - "src/**/*gold*/*merge*.py"
+  - "src/**/*gold*/merge_*.py"
+alwaysApply: false
 ---
 
 # Gold Layer MERGE Patterns

@@ -1,4 +1,9 @@
 ---
+description: Patterns for generating synthetic data with Faker for Bronze layer testing with configurable data corruption
+globs:
+  - "src/**/*bronze*/*generate*.py"
+  - "src/**/*faker*.py"
+  - "src/**/*synthetic*.py"
 alwaysApply: false
 ---
 # Faker Data Generation Patterns

@@ -1,6 +1,10 @@
 ---
 description: Patterns for setting up Databricks Genie Spaces with comprehensive agent instructions, data assets, and benchmark questions
-globs: docs/gold/*GENIE*.md
+globs:
+  - "docs/**/*genie*.md"
+  - "docs/**/*GENIE*.md"
+  - "src/**/genie/**/*.py"
+  - "context/genie/**/*"
 alwaysApply: false
 ---
 # Databricks Genie Space Setup Patterns

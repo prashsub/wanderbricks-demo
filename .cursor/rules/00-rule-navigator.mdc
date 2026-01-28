@@ -1,0 +1,427 @@
+---
+description: Intelligent rule navigation system with tiered loading for context-efficient agent operation
+alwaysApply: true
+---
+
+# Rule Navigator: Context-Aware Tiered Loading System
+
+## Purpose
+
+This navigation rule implements **tiered context loading** to keep total context under Claude Opus's 200K token limit while maximizing rule utility. Rules load progressively based on task complexity.
+
+---
+
+## ⚠️ CRITICAL: Context Budget Management
+
+**Claude Opus Context Limit:** 200K tokens  
+**Target Operating Budget:** 40-60K tokens (for optimal performance)  
+**Maximum Rule Budget:** 80K tokens (leaves room for code/files)
+
+### Current Rule Inventory
+
+| Tier | Purpose | Token Budget | Rules |
+|---|---|---|---|
+| **Tier 1: Core** | Always loaded | ~12K tokens | 4 rules |
+| **Tier 2: Domain Index** | Loaded on domain detection | ~8K tokens | Domain summaries |
+| **Tier 3: Detailed** | Loaded on specific task | ~20-40K tokens | Full patterns |
+
+---
+
+## Tier 1: Core Rules (Always Loaded)
+
+**Budget: ~12K tokens** - Essential for every interaction
+
+| Rule | Tokens | Purpose |
+|---|---|---|
+| `00-rule-navigator.mdc` | ~3K | This navigation system |
+| `01-databricks-expert-agent.mdc` | ~5.7K | Core agent behavior |
+| `20-cursor-rules.mdc` | ~0.4K | Rules management |
+| `22-documentation-organization.mdc` | ~2K | Documentation standards |
+
+**Note:** `21-self-improvement.mdc` moved to Tier 3 (load only when improving rules).
+
+---
+
+## Tier 2: Domain Detection & Index Loading
+
+When a domain is detected, load ONLY the domain index summary (not full rules).
+
+### Domain Detection Keywords
+
+| Domain | Keywords | Index to Load |
+|---|---|---|
+| **Semantic Layer** | metric view, TVF, Genie, semantic | Load index summary |
+| **Gold Layer** | Gold, merge, fact, dimension, SCD2 | Load index summary |
+| **Infrastructure** | deploy, Asset Bundle, job, workflow | Load index summary |
+| **Monitoring** | monitoring, dashboard, alert | Load index summary |
+| **Silver Layer** | DLT, Silver, expectations, quality | Load index summary |
+| **Bronze Layer** | Bronze, Faker, synthetic, ingestion | Load index summary |
+| **ML** | MLflow, model, training, inference | Load index summary |
+
+---
+
+## Tier 3: Detailed Rule Loading
+
+**ONLY load full detailed rules when:**
+1. User explicitly requests: `@rule-name.mdc`
+2. Task requires specific patterns (e.g., "fix duplicate key error")
+3. File patterns match rule globs
+
+### Large Rules - Load Sparingly
+
+These rules are 10K+ tokens each - load only ONE at a time:
+
+| Rule | Tokens | Load When |
+|---|---|---|
+| `27-mlflow-mlmodels-patterns.mdc` | ~16K | ML model tasks |
+| `02-databricks-asset-bundles.mdc` | ~15K | Deployment tasks |
+| `17-lakehouse-monitoring-comprehensive.mdc` | ~14.5K | Monitoring setup |
+| `29-genie-space-export-import-api.mdc` | ~14.5K | Genie API tasks |
+| `08-dqx-patterns.mdc` | ~13K | DQX validation |
+| `18-databricks-aibi-dashboards.mdc` | ~12K | Dashboard creation |
+| `14-metric-views-patterns.mdc` | ~11K | Metric view creation |
+| `07-dlt-expectations-patterns.mdc` | ~11K | DLT expectations |
+| `16-genie-space-patterns.mdc` | ~10.5K | Genie Space setup |
+| `12-gold-layer-documentation.mdc` | ~10K | Gold documentation |
+
+---
+
+## Progressive Loading Strategy
+
+### Step 1: Initial Detection (~12K tokens)
+```
+User Request → Load Tier 1 (Core rules only)
+```
+
+### Step 2: Domain Routing (~20K tokens total)
+```
+Detect domain keywords → Load domain index summary
+Example: "metric view" → Semantic Layer index
+```
+
+### Step 3: Task-Specific Loading (~40-60K tokens total)
+```
+Identify specific task → Load ONE detailed rule
+Example: "fix duplicate key" → 11-gold-delta-merge-deduplication.mdc
+```
+
+### Step 4: Deep Dive (if needed, ~80K max)
+```
+Complex multi-step task → Load 2-3 related detailed rules
+Monitor total context - warn if approaching limit
+```
+
+---
+
+## Domain Index Summaries
+
+### Semantic Layer Index (~2K tokens)
+
+**Rules in domain:** 4 rules (~44.5K tokens total)
+- `14-metric-views-patterns.mdc` (~11K) - Metric view YAML structure
+- `15-databricks-table-valued-functions.mdc` (~8K) - TVF SQL patterns
+- `16-genie-space-patterns.mdc` (~10.5K) - Genie Space setup
+- `29-genie-space-export-import-api.mdc` (~14.5K) - Genie API
+
+**Key Patterns (load full rule for details):**
+1. Metric views use `WITH METRICS LANGUAGE YAML` syntax
+2. TVFs must have STRING parameters for Genie compatibility
+3. Genie Spaces need comprehensive agent instructions
+4. Export/Import uses `serialized_space` JSON format
+
+**When to load full rules:**
+- Creating metric views → Load `14-metric-views-patterns.mdc`
+- Creating TVFs → Load `15-databricks-table-valued-functions.mdc`
+- Setting up Genie Space → Load `16-genie-space-patterns.mdc`
+- API automation → Load `29-genie-space-export-import-api.mdc`
+
+---
+
+### Gold Layer Index (~2K tokens)
+
+**Rules in domain:** 7 rules (~35.8K tokens total)
+- `10-gold-layer-merge-patterns.mdc` (~2.5K) - MERGE operations
+- `11-gold-delta-merge-deduplication.mdc` (~4K) - Deduplication
+- `12-gold-layer-documentation.mdc` (~10K) - Documentation standards
+- `13-mermaid-erd-patterns.mdc` (~6K) - ERD diagrams
+- `23-gold-layer-schema-validation.mdc` (~4K) - Schema validation
+- `24-fact-table-grain-validation.mdc` (~5K) - Fact grain
+- `25-yaml-driven-gold-setup.mdc` (~3.5K) - YAML setup
+
+**Key Patterns:**
+1. Always deduplicate before MERGE to prevent duplicate key errors
+2. Use explicit column mapping (Silver → Gold names may differ)
+3. Fact tables: verify grain (transaction vs aggregated)
+4. SCD2 dimensions need `is_current` filtering
+
+**When to load full rules:**
+- Duplicate key errors → Load `11-gold-delta-merge-deduplication.mdc`
+- Creating Gold tables → Load `25-yaml-driven-gold-setup.mdc`
+- Documentation → Load `12-gold-layer-documentation.mdc`
+
+---
+
+### Infrastructure Index (~2K tokens)
+
+**Rules in domain:** 4 rules (~35.6K tokens total)
+- `02-databricks-asset-bundles.mdc` (~15K) - DAB configuration
+- `03-schema-management-patterns.mdc` (~1.5K) - Schema creation
+- `04-databricks-table-properties.mdc` (~2K) - Table properties
+- `05-unity-catalog-constraints.mdc` (~7.5K) - PK/FK constraints
+
+**Key Patterns:**
+1. Use `notebook_task` not `python_task` in DABs
+2. Use `base_parameters` dict, not CLI-style `parameters`
+3. Schemas created programmatically with `CREATE SCHEMA IF NOT EXISTS`
+4. Constraints applied via `ALTER TABLE` after table creation
+
+**When to load full rules:**
+- Deployment issues → Load `02-databricks-asset-bundles.mdc`
+- Constraint errors → Load `05-unity-catalog-constraints.mdc`
+
+---
+
+### Monitoring Index (~2K tokens)
+
+**Rules in domain:** 3 rules (~34.2K tokens total)
+- `17-lakehouse-monitoring-comprehensive.mdc` (~14.5K) - Complete guide
+- `18-databricks-aibi-dashboards.mdc` (~12K) - Dashboard patterns
+- `19-sql-alerting-patterns.mdc` (~7.5K) - SQL alerts
+
+**Key Patterns:**
+1. Custom metrics use `input_columns=[":table"]` for table-level KPIs
+2. Dashboard JSON uses `page.layout` for positioning
+3. Alerts use config-driven YAML deployment
+
+**When to load full rules:**
+- Setting up monitoring → Load `17-lakehouse-monitoring-comprehensive.mdc`
+- Creating dashboards → Load `18-databricks-aibi-dashboards.mdc`
+- Setting up alerts → Load `19-sql-alerting-patterns.mdc`
+
+---
+
+### Silver Layer Index (~1.5K tokens)
+
+**Rules in domain:** 2 rules (~23.9K tokens total)
+- `07-dlt-expectations-patterns.mdc` (~11K) - DLT expectations
+- `08-dqx-patterns.mdc` (~13K) - DQX framework
+
+**Key Patterns:**
+1. DLT expectations stored in Unity Catalog Delta table
+2. Use `@dlt.expect_all_or_drop()` for strict enforcement
+3. DQX provides richer diagnostics than DLT expectations
+4. Pre-merge validation catches issues before Gold
+
+**When to load full rules:**
+- DLT pipeline development → Load `07-dlt-expectations-patterns.mdc`
+- Advanced validation → Load `08-dqx-patterns.mdc`
+
+---
+
+### Bronze Layer Index (~1K tokens)
+
+**Rules in domain:** 1 rule (~4.5K tokens total)
+- `06-faker-data-generation.mdc` (~4.5K) - Synthetic data
+
+**Key Patterns:**
+1. Use Faker with configurable corruption rates
+2. Generate realistic but identifiable test data
+3. Include edge cases for Silver layer testing
+
+---
+
+### ML Index (~1K tokens)
+
+**Rules in domain:** 1 rule (~16K tokens total)
+- `27-mlflow-mlmodels-patterns.mdc` (~16K) - MLflow patterns
+
+**Key Patterns:**
+1. Use `/Shared/` experiment paths (not `/Users/`)
+2. Don't define experiments in Asset Bundles
+3. Log datasets inside `mlflow.start_run()` context
+4. Inline helpers (don't import modules in DAB notebooks)
+
+---
+
+## Context Overflow Prevention
+
+### Warning Signs
+- Multiple large rules being loaded simultaneously
+- User working across multiple domains
+- Complex multi-file edits
+
+### Mitigation Strategies
+
+**Strategy 1: Load Index First**
+```
+Don't load full 14-metric-views-patterns.mdc (11K tokens) immediately.
+Load Semantic Layer Index (~2K tokens) first.
+Only load full rule if specific pattern needed.
+```
+
+**Strategy 2: Unload After Use**
+```
+If switching domains:
+- Mentally "unload" previous domain rules
+- Load new domain index
+- Keep only Tier 1 active
+```
+
+**Strategy 3: Reference Instead of Embed**
+```
+For rarely-needed details:
+- Reference documentation path instead of embedding
+- Example: "See docs/reference/rule-navigation-system.md for full guide"
+```
+
+**Strategy 4: Ask Before Loading Large Rules**
+```
+If task might need multiple 10K+ token rules:
+- Ask user which aspect to focus on first
+- Load one detailed rule at a time
+```
+
+---
+
+## Quick Reference: Token Budgets
+
+### Tier 1 (Always) - ~12K tokens
+```
+00-rule-navigator.mdc     ~3K
+01-databricks-expert-agent.mdc  ~5.7K
+20-cursor-rules.mdc       ~0.4K
+22-documentation-organization.mdc ~2K
+```
+
+### Tier 2 (Domain Index) - ~2K per domain
+```
+Semantic Layer Index      ~2K
+Gold Layer Index          ~2K
+Infrastructure Index      ~2K
+Monitoring Index          ~2K
+Silver Layer Index        ~1.5K
+Bronze Layer Index        ~1K
+ML Index                  ~1K
+```
+
+### Tier 3 (Detailed) - Load ONE at a time
+```
+Largest rules (10K+ tokens):
+- 27-mlflow-mlmodels-patterns.mdc     ~16K
+- 02-databricks-asset-bundles.mdc     ~15K
+- 17-lakehouse-monitoring-comprehensive.mdc ~14.5K
+- 29-genie-space-export-import-api.mdc ~14.5K
+- 08-dqx-patterns.mdc                 ~13K
+- 18-databricks-aibi-dashboards.mdc   ~12K
+- 14-metric-views-patterns.mdc        ~11K
+- 07-dlt-expectations-patterns.mdc    ~11K
+```
+
+---
+
+## Task Detection & Rule Routing Table
+
+| Task Keywords | Domain | Load Index | Load Detail (if specific) |
+|---|---|---|---|
+| "metric view", "semantic" | Semantic | ✅ | 14-metric-views-patterns |
+| "TVF", "function" | Semantic | ✅ | 15-databricks-tvfs |
+| "Genie Space", "Genie setup" | Semantic | ✅ | 16-genie-space-patterns |
+| "Genie API", "export/import" | Semantic | ✅ | 29-genie-space-api |
+| "Gold merge", "MERGE" | Gold | ✅ | 10-gold-merge-patterns |
+| "duplicate key" | Gold | ✅ | 11-deduplication |
+| "Gold documentation" | Gold | ✅ | 12-gold-layer-docs |
+| "ERD", "diagram" | Gold | ✅ | 13-mermaid-erd |
+| "schema validation" | Gold | ✅ | 23-schema-validation |
+| "fact grain" | Gold | ✅ | 24-fact-grain |
+| "YAML setup" | Gold | ✅ | 25-yaml-driven |
+| "deploy", "Asset Bundle" | Infra | ✅ | 02-asset-bundles |
+| "schema", "CREATE SCHEMA" | Infra | ✅ | 03-schema-management |
+| "table properties" | Infra | ✅ | 04-table-properties |
+| "constraints", "PK/FK" | Infra | ✅ | 05-constraints |
+| "monitoring", "Lakehouse" | Monitor | ✅ | 17-monitoring |
+| "dashboard", "AI/BI" | Monitor | ✅ | 18-dashboards |
+| "alert", "SQL alert" | Monitor | ✅ | 19-alerting |
+| "DLT", "expectations" | Silver | ✅ | 07-dlt-expectations |
+| "DQX", "validation" | Silver | ✅ | 08-dqx-patterns |
+| "Faker", "synthetic" | Bronze | ✅ | 06-faker |
+| "MLflow", "model" | ML | ✅ | 27-mlflow |
+| "exploration notebook" | Explore | ✅ | 22-adhoc-exploration |
+| "project plan" | Plan | ✅ | 26-project-plan |
+| "improve rules" | Admin | ✅ | 21-self-improvement |
+
+---
+
+## Explicit Rule Requests
+
+When user explicitly references a rule with `@rule-name.mdc`:
+1. ✅ Load that rule regardless of context budget
+2. ✅ Skip domain index (user knows what they need)
+3. ⚠️ Warn if loading multiple large rules
+
+---
+
+## Context Budget Monitoring
+
+### Green Zone (0-40K tokens)
+- Normal operation
+- Load domain indexes freely
+- Can load 2-3 detailed rules
+
+### Yellow Zone (40-80K tokens)
+- Caution - getting full
+- Prefer indexes over detailed rules
+- Ask before loading additional large rules
+
+### Red Zone (80K+ tokens)
+- Context constrained
+- Load only essential patterns
+- Reference docs instead of embedding
+- Consider splitting task into phases
+
+---
+
+## Agent Workflow Summary
+
+```
+1. User Request Received
+   └─ Tier 1 already loaded (~12K tokens)
+
+2. Detect Domain Keywords
+   └─ Load relevant Domain Index (~2K tokens)
+   └─ Total: ~14K tokens
+
+3. Identify Specific Task
+   └─ Load ONE detailed rule if needed (~10-16K tokens)
+   └─ Total: ~24-30K tokens
+
+4. Execute Task
+   └─ Apply patterns from loaded rules
+   └─ Reference additional rules by name only
+
+5. Context Management
+   └─ If switching domains, mentally unload previous
+   └─ Keep total under 80K for rule content
+```
+
+---
+
+## Benefits of Tiered Loading
+
+| Benefit | Impact |
+|---|---|
+| **Context efficiency** | ~80% reduction vs loading all rules |
+| **Faster responses** | Less context to process |
+| **Better accuracy** | Focused, relevant patterns |
+| **Scalability** | Can add unlimited rules |
+| **Predictable** | Clear token budgets per tier |
+
+---
+
+## Maintenance
+
+When adding new rules:
+1. Calculate token size (`wc -c file.mdc / 4`)
+2. Assign to appropriate domain
+3. Update domain index summary
+4. If >10K tokens, add to "Large Rules" list
+5. Set `alwaysApply: false` in frontmatter
